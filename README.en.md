@@ -105,20 +105,21 @@ After configuration, AI replies can trigger voice playback. If playback fails, t
 
 Detailed development instructions are in a separate document:
 
-- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [CONTRIBUTING.en.md](CONTRIBUTING.en.md)
 
 It includes environment requirements, build methods, contribution workflow, coding style, and model/SDK dependency notes.
 
 ## License
 
 - Original project code: Apache-2.0 (see [LICENSE](LICENSE))
-- Third-party component and asset terms: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
+- Third-party component and asset terms: see [THIRD_PARTY_LICENSES.en.md](THIRD_PARTY_LICENSES.en.md)
 - License copies in release package: see `res/licenses/`
 
 ## Roadmap
 
 - [ ] Windows support
 - [ ] Linux support
+- [ ] LLM long-term memory
 - [ ] Better character motion/expression quality (including VTube Studio model expression attempts)
 - [ ] STT support (speech-to-text input)
 - [ ] MCP support (tools calling support)
