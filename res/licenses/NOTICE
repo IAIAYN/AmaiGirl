@@ -4,7 +4,7 @@ Copyright (c) 2026 IAIAYN
 【简体中文】
 
 本项目包含第三方组件，这些组件受其各自许可证和条款约束。
-详细信息请参阅 THIRD_PARTY_LICENSES.md。
+详细信息请参阅 THIRD_PARTY_LICENSES.md（简体中文）或 THIRD_PARTY_LICENSES.en.md（英文）。
 
 适用范围说明：
 - 仓库根目录的 LICENSE（Apache-2.0）仅适用于本项目作者编写的原创源代码（除非另有声明）。
@@ -19,7 +19,7 @@ Copyright (c) 2026 IAIAYN
 [English]
 
 This project includes third-party components that are licensed under separate terms.
-Please review THIRD_PARTY_LICENSES.md for details.
+Please review THIRD_PARTY_LICENSES.en.md (English) or THIRD_PARTY_LICENSES.md (Simplified Chinese) for details.
 
 Scope notice:
 - The root LICENSE (Apache-2.0) applies only to the original source code authored for this project,
