@@ -12,9 +12,19 @@ AmaiGirl aims to become a cross-platform AI desktop assistant. The current imple
 
 ### 1. Prerequisites
 
-- Recommended OS: macOS 14.0+ (current primary development platform)
+#### macOS
+
+- Build environment: Xcode 15 (macOS 14 SDK) or newer
 - Build tools: CMake + Ninja + Clang
 - Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia)
+
+#### Windows
+
+- TBD
+
+#### Linux
+
+- TBD
 
 ### 2. **Live2D SDK (Important, must be downloaded manually)**
 
@@ -37,6 +47,8 @@ Expected result:
 > If this structure is incorrect, CMake linkage for Live2D Core will fail.
 
 ### 3. Build & Run
+
+#### macOS
 
 Typical workflow:
 
@@ -65,6 +77,14 @@ cmake --build build-release -j
 ```
 
 > If you prefer using the existing `build` directory, reconfigure it first and then rebuild.
+
+#### Windows
+
+- TBD
+
+#### Linux
+
+- TBD
 
 ### 4. Coding & Commit Guidelines
 

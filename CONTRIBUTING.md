@@ -12,9 +12,19 @@
 
 ### 1. 开发前准备
 
-- 推荐系统：macOS 14.0+（当前主开发平台）
+#### macOS
+
+- 构建环境：Xcode 15（macOS 14 SDK）或更高版本
 - 编译工具：CMake + Ninja + Clang
 - Qt：Qt 6（项目当前使用 Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia）
+
+#### Windows
+
+- TBD
+
+#### Linux
+
+- TBD
 
 ### 2. **Live2D SDK（重要，必须自行下载）**
 
@@ -37,6 +47,8 @@
 > 若目录结构不正确，CMake 链接 Live2D Core 时会失败。
 
 ### 3. 构建与运行
+
+#### macOS
 
 常规流程：
 
@@ -65,6 +77,14 @@ cmake --build build-release -j
 ```
 
 > 若你使用的是现有 `build` 目录，也可先在该目录重新配置后再构建。
+
+#### Windows
+
+- TBD
+
+#### Linux
+
+- TBD
 
 ### 4. 代码与提交规范
 

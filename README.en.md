@@ -2,7 +2,7 @@
   <img src="docs/app-icon.png" alt="AmaiGirl" width="120" />
   <h1>AmaiGirl</h1>
   <p><a href="README.md#zh-cn">简体中文</a> | <a href="README.en.md#en-us">English</a></p>
-  <p><strong>An AI desktop assistant with a cross-platform vision</strong> · Compatible with OpenAI-format API calls · Currently implemented on macOS 14.0+</p>
+  <p><strong>An AI desktop assistant with a cross-platform vision</strong> · Compatible with OpenAI-format API calls · Currently implemented on macOS 13.0+</p>
   <p>
     <img src="docs/badges/goal-cross-platform.svg" alt="Goal" />
     <img src="docs/badges/platform-macos.svg" alt="Platform" />
@@ -19,12 +19,12 @@
 AmaiGirl is an AI desktop assistant project built around three core values: **companionship, extensibility, and always-on desktop experience**.  
 It is more than a chat window — it aims to become a desktop companion that can talk, interact, and evolve continuously in your workflow.
 
-The current version provides a usable closed loop on macOS 14.0+, and will continue expanding to more platforms.
+The current version provides a usable closed loop on macOS 13.0+, and will continue expanding to more platforms.
 
 ## Positioning
 
 - **Goal**: Build a cross-platform AI desktop assistant
-- **Current Status**: Runnable on macOS 14.0+
+- **Current Status**: Runnable on macOS 13.0+
 - **Technical Direction**: Desktop resident app + Live2D character interaction + LLM chat + TTS playback
 
 ## Demo

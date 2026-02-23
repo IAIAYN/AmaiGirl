@@ -2,7 +2,7 @@
   <img src="docs/app-icon.png" alt="AmaiGirl" width="120" />
   <h1>AmaiGirl</h1>
   <p><a href="README.md#zh-cn">简体中文</a> | <a href="README.en.md#en-us">English</a></p>
-  <p><strong>面向全平台愿景的 AI 桌面助手</strong> · 可支持所有 OpenAI 格式的 API 调用 · 目前已实现 macOS 14.0+ 版本</p>
+  <p><strong>面向全平台愿景的 AI 桌面助手</strong> · 可支持所有 OpenAI 格式的 API 调用 · 目前已实现 macOS 13.0+ 版本</p>
   <p>
     <img src="docs/badges/goal-cross-platform.svg" alt="Goal" />
     <img src="docs/badges/platform-macos.svg" alt="Platform" />
@@ -19,12 +19,12 @@
 AmaiGirl 是一个以「**陪伴感 + 可扩展性 + 桌面常驻体验**」为核心目标的 AI 桌面助手项目。  
 它不仅是一个聊天窗口，更希望成为你工作流中的“会说话、会互动、可持续进化”的桌面伙伴。
 
-当前版本已在 macOS 14.0+ 上实现基础可用闭环，后续将逐步完善并扩展到更多平台。
+当前版本已在 macOS 13.0+ 上实现基础可用闭环，后续将逐步完善并扩展到更多平台。
 
 ## 项目定位
 
 - **目标**：打造全平台（Cross-Platform）AI 桌面助手
-- **当前状态**：macOS 14.0+ 版本可运行
+- **当前状态**：macOS 13.0+ 版本可运行
 - **技术方向**：桌面常驻 + Live2D 角色交互 + LLM 对话 + TTS 播放
 
 ## 演示效果
