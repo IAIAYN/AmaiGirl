@@ -73,7 +73,7 @@ QString latestAssistantMessageFromDisk(const QString& modelFolder)
     }
     return {};
 }
-}
+} // namespace
 
 ChatController::ChatController(QObject* parent)
     : QObject(parent)

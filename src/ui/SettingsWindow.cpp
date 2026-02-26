@@ -24,7 +24,6 @@
 #include <QUrl>
 #include <QStyleFactory>
 #include <QStyle>
-#include <QApplication>
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QCheckBox>
@@ -36,8 +35,6 @@
 #include <QLocale>
 #include <QtGlobal>
 
-#include <QGuiApplication>
-#include <QScreen>
 #include <QtMultimedia/QMediaDevices>
 #include <QtMultimedia/QAudioDevice>
 
