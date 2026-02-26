@@ -4,9 +4,10 @@
   <p><a href="README.md#zh-cn">简体中文</a> | <a href="README.en.md#en-us">English</a></p>
   <p><strong>面向全平台愿景的 AI 桌面助手</strong> · 可支持所有 OpenAI 格式的 API 调用 · 当前已支持 macOS 13.0+ 与 Linux（Wayland）</p>
   <p>
-    <img src="docs/badges/goal-cross-platform.svg" alt="Goal" />
-    <img src="docs/badges/platform-macos-linux.svg" alt="Platform" />
-    <img src="docs/badges/license-apache2.svg" alt="License" />
+    <a href="https://github.com/IAIAYN/AmaiGirl/releases"><img src="https://img.shields.io/github/v/release/IAIAYN/AmaiGirl?display_name=tag" alt="Release" /></a>
+    <a href="https://github.com/IAIAYN/AmaiGirl/blob/main/LICENSE"><img src="https://img.shields.io/github/license/IAIAYN/AmaiGirl" alt="License" /></a>
+    <a href="https://github.com/IAIAYN/AmaiGirl/actions/workflows/super-linter.yml"><img src="https://img.shields.io/github/actions/workflow/status/IAIAYN/AmaiGirl/super-linter.yml?branch=main&label=lint-main" alt="Lint Main" /></a>
+    <a href="https://github.com/IAIAYN/AmaiGirl/actions/workflows/super-linter.yml"><img src="https://img.shields.io/github/actions/workflow/status/IAIAYN/AmaiGirl/super-linter.yml?branch=dev&label=lint-dev" alt="Lint Dev" /></a>
   </p>
 </div>
 
