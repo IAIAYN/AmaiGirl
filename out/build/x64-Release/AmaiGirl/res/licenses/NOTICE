@@ -1,0 +1,32 @@
+AmaiGirl
+Copyright (c) 2026 IAIAYN
+
+【简体中文】
+
+本项目包含第三方组件，这些组件受其各自许可证和条款约束。
+详细信息请参阅 THIRD_PARTY_LICENSES.md（简体中文）或 THIRD_PARTY_LICENSES.en.md（英文）。
+
+适用范围说明：
+- 仓库根目录的 LICENSE（Apache-2.0）仅适用于本项目作者编写的原创源代码（除非另有声明）。
+- 第三方软件、SDK、库、商标与模型素材仍受其权利人条款约束，不会因本项目而被再次授权。
+
+商标说明：
+- Live2D 及相关标识是 Live2D Inc. 的商标或注册商标。
+- Qt 是 The Qt Company Ltd. 的商标。
+
+---
+
+[English]
+
+This project includes third-party components that are licensed under separate terms.
+Please review THIRD_PARTY_LICENSES.en.md (English) or THIRD_PARTY_LICENSES.md (Simplified Chinese) for details.
+
+Scope notice:
+- The root LICENSE (Apache-2.0) applies only to the original source code authored for this project,
+  unless otherwise stated.
+- Third-party software, SDKs, libraries, trademarks, and model assets remain under their respective owners'
+  terms and are NOT relicensed by this project.
+
+Trademark notice:
+- Live2D and related marks are trademarks or registered trademarks of Live2D Inc.
+- Qt is a trademark of The Qt Company Ltd.

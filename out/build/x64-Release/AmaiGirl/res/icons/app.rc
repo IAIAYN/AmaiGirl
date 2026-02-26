@@ -1,0 +1,37 @@
+// app.rc - Windows资源文件，用于绑定EXE图标
+#include <windows.h>
+
+// 图标ID和文件路径（路径是相对于rc文件的位置）
+// rc文件在res/icons/，所以app-icon.ico和它同目录，直接写文件名即可
+IDI_MAIN_ICON ICON "app-icon.ico"
+
+// 可选：设置EXE的版本信息（非必须，仅优化）
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+FILEFLAGS 0x1L
+#else
+FILEFLAGS 0x0L
+#endif
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"  // 中文（中国）+ Unicode
+        BEGIN
+            VALUE "CompanyName", "AmaiGirl"
+            VALUE "FileDescription", "AmaiGirl for Windows11"
+            VALUE "FileVersion", "1.0.0.0"
+            VALUE "ProductName", "AmaiGirl"
+            VALUE "ProductVersion", "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x804, 1200  // 中文（中国）+ Unicode
+    END
+END
