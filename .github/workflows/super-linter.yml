@@ -32,7 +32,7 @@ jobs:
         env:
           VALIDATE_ALL_CODEBASE: true
           DEFAULT_BRANCH: "main"
-          FILTER_REGEX_INCLUDE: "(^src/.*\\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$|^CMakeLists\\.txt$)"
+          FILTER_REGEX_INCLUDE: "(^|.*/)(src/.*\\.(c|cc|cpp|cxx|h|hh|hpp|hxx)|CMakeLists\\.txt)$"
           VALIDATE_CMAKE: true
           VALIDATE_CPP: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
