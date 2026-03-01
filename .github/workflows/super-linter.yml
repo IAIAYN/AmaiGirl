@@ -18,6 +18,47 @@ permissions:
   statuses: write
 
 jobs:
+  guard-platform-branch-diff:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.base_ref == 'dev' && (
+        startsWith(github.head_ref, 'feat/windows') ||
+        startsWith(github.head_ref, 'feat/linux') ||
+        startsWith(github.head_ref, 'feat/macos')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve platform from branch
+        id: platform
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_BRANCH" == feat/windows* ]]; then
+            PLATFORM="windows"
+          elif [[ "$HEAD_BRANCH" == feat/linux* ]]; then
+            PLATFORM="linux"
+          elif [[ "$HEAD_BRANCH" == feat/macos* ]]; then
+            PLATFORM="macos"
+          else
+            echo "Unsupported platform branch: $HEAD_BRANCH" >&2
+            exit 1
+          fi
+          echo "platform=$PLATFORM" >> "$GITHUB_OUTPUT"
+
+      - name: Guard platform branch diff scope
+        run: >-
+          python3 scripts/check_platform_branch_diff.py
+          --platform "${{ steps.platform.outputs.platform }}"
+          --base "${{ github.event.pull_request.base.sha }}"
+          --head "${{ github.sha }}"
+          --allowlist-file ".github/platform-diff-allowlist.txt"
+
   enforce-platform-branch-policy:
     if: github.event_name == 'pull_request' && github.base_ref == 'dev'
     runs-on: ubuntu-latest

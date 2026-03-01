@@ -149,6 +149,8 @@ CI 规则：
 - `feat/macos*` 分支自动执行 macOS 宏规范检查
 - 其他 `feat/xxx`（全平台特性）自动执行 `--platform all` 全量检查
 - 目标分支为 `dev` 的 PR，来源分支必须是 `feat/*`
+- 对 `feat/windows*` / `feat/linux*` / `feat/macos*` 到 `dev` 的 PR，会额外执行“改动范围守卫”：C/C++ 改动必须落在对应平台宏保护块内，避免误改共享代码
+- 若确需例外文件，可在 `.github/platform-diff-allowlist.txt` 中按行添加路径 glob 白名单（仅用于平台分支改动范围守卫）
 
 推荐在仓库设置中开启分支保护：
 

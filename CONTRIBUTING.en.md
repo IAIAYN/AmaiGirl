@@ -149,6 +149,8 @@ CI policy:
 - `feat/macos*` branches run macOS macro checks
 - Other `feat/xxx` branches (cross-platform features) run `--platform all`
 - PRs targeting `dev` must come from `feat/*`
+- PRs from `feat/windows*` / `feat/linux*` / `feat/macos*` to `dev` also run a "diff scope guard": C/C++ changes must stay inside the corresponding platform macro-guarded regions to avoid accidental shared-code edits
+- If exceptions are needed, add path-glob entries (one per line) to `.github/platform-diff-allowlist.txt` for the platform branch diff-scope guard
 
 Recommended repository protection settings:
 
