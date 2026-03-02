@@ -18,6 +18,9 @@
 #include "common/SettingsManager.hpp"
 #if defined(Q_OS_MACOS)
 #include <ApplicationServices/ApplicationServices.h>
+#elif defined(Q_OS_WIN32)
+#include <Windows.h>
+#pragma comment(lib, "user32.lib")
 #endif
 
 // physics removed
@@ -677,7 +680,7 @@ void Renderer::mousePressEvent(QMouseEvent *e) {
         m_lastGlobalPos = e->globalPosition().toPoint();
         bool opaque = isOpaqueAtGlobal(m_lastGlobalPos);
         bool canSystemPassthrough = false;
-#if defined(Q_OS_MACOS)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN32)
         canSystemPassthrough = true;
 #endif
         m_passthroughActive = (!opaque && canSystemPassthrough); // transparent -> forward to OS
@@ -696,6 +699,18 @@ void Renderer::mousePressEvent(QMouseEvent *e) {
                     wh->startSystemMove();
                     e->accept();
                     return;
+                }
+            }
+        }
+#elif defined(Q_OS_WIN32)
+        if (opaque) {
+            if (auto* topLevel = window()) {
+                if (auto* wh = topLevel->windowHandle()) {
+                    m_forceMouseOpaqueDuringDrag = false;
+                    if (wh->startSystemMove()) {
+                        e->accept();
+                        return;
+                    }
                 }
             }
         }
@@ -797,7 +812,7 @@ void Renderer::updateMouseTransparent() {
 
     if (m_forceMouseOpaqueDuringDrag) {
         setAttribute(Qt::WA_TransparentForMouseEvents, false);
-#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX) || defined(Q_OS_WIN32)
         if (auto* w = window()) {
             if (auto* wh = w->windowHandle()) {
                 wh->setFlag(Qt::WindowTransparentForInput, false);
@@ -809,7 +824,7 @@ void Renderer::updateMouseTransparent() {
     QPoint g = QCursor::pos();
     bool opaque = isOpaqueAtGlobal(g);
     // 1) 确保顶层窗口在透明区域真正穿透
-#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX) || defined(Q_OS_WIN32)
     if (auto* w = window()) {
         if (auto* wh = w->windowHandle()) {
             wh->setFlag(Qt::WindowTransparentForInput, !opaque);
