@@ -33,6 +33,7 @@ The current version provides a usable baseline on macOS 13.0+, Windows 10/11, an
 
 - [x] Main UI demo (macOS + Linux)
   ![screenshot1](docs/screenshot1.png)
+  ![screennshot1.0](docs/screenshot1.0.png)
   ![screenshot1.1](docs/screenshot1.1.png)
 - [x] Chat demo
   ![screenshot2](docs/screenshot2.png)
