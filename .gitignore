@@ -1,5 +1,6 @@
 /.vscode/
 /.idea/
+/.venv/
 *.iml
 /sdk/cubism/
 /build/

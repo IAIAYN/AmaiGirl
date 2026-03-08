@@ -94,7 +94,7 @@ public:
     // Cache dir for temp files (e.g. TTS audio)
     QString cacheDir() const;
 
-    // Chat persistence (per model, stored under ~/.AmaiGirl/Chats)
+    // Chat persistence (per model, stored under the platform-specific app data directory)
     QString chatsDir() const;
     QString chatPathForModel(const QString& modelFolder) const; // xxxx.chat.json
 

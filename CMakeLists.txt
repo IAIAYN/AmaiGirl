@@ -1,11 +1,21 @@
 cmake_minimum_required(VERSION 3.21)
 project(AmaiGirl LANGUAGES CXX)
 
+if(WIN32 AND NOT MSVC)
+    message(FATAL_ERROR
+        "Windows builds currently require MSVC (Visual Studio 2022 / v143 or newer). "
+        "The Live2D Cubism Core libraries used by this project are provided as MSVC import libraries, "
+        "so MinGW/GCC toolchains are not supported."
+    )
+endif()
+
 option(AMAIGIRL_ENABLE_APPIMAGE "Enable Linux AppImage packaging target" ON)
 option(AMAIGIRL_APPIMAGE_CLEAN "Clean AppDir before packaging AppImage" ON)
+option(AMAIGIRL_ENABLE_WINDEPLOYQT "Enable Windows deployment/package targets" ON)
 set(AMAIGIRL_LINUXDEPLOY_EXECUTABLE "" CACHE FILEPATH "Optional path override for linuxdeploy executable")
 set(AMAIGIRL_APPIMAGETOOL_EXECUTABLE "" CACHE FILEPATH "Optional path override for appimagetool executable")
 set(AMAIGIRL_QMAKE_EXECUTABLE "" CACHE FILEPATH "Optional path override for qmake/qmake6 executable")
+set(AMAIGIRL_WINDEPLOYQT_EXECUTABLE "" CACHE FILEPATH "Optional path override for windeployqt executable")
 
 # Ensure minimum macOS version for deployment (downward compatibility)
 if(APPLE)
@@ -381,6 +391,12 @@ else()
     )
 endif()
 
+if(WIN32)
+    target_sources(AmaiGirl PRIVATE
+        cmake/AmaiGirl.rc
+    )
+endif()
+
 # Also set per-target deployment target as a safeguard
 if(APPLE)
     set_target_properties(AmaiGirl PROPERTIES MACOSX_DEPLOYMENT_TARGET "13.0")
@@ -392,6 +408,14 @@ endif()
 # Include dirs: single root only (Scheme A)
 set(SRC_ROOT "${PROJECT_SOURCE_DIR}/src")
 target_include_directories(AmaiGirl PRIVATE ${SRC_ROOT} ${CUBISM_INCLUDE_DIR})
+
+if(MSVC)
+    target_compile_options(AmaiGirl PRIVATE /Zc:__cplusplus)
+endif()
+
+if(WIN32)
+    target_compile_definitions(AmaiGirl PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 
 target_link_libraries(AmaiGirl PRIVATE
     Qt6::Core
@@ -466,6 +490,101 @@ endif()
 
 # Finalize Qt bundle metadata
 qt_finalize_executable(AmaiGirl)
+
+# Windows: deploy Qt runtime and package a portable zip via windeployqt
+if(WIN32 AND AMAIGIRL_ENABLE_WINDEPLOYQT)
+    set(_AMAIGIRL_MSVC_REDIST_CRT_DIR "")
+    if(MSVC)
+        get_filename_component(_amaigirl_msvc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        get_filename_component(_amaigirl_msvc_host_dir "${_amaigirl_msvc_bin_dir}" DIRECTORY)
+        get_filename_component(_amaigirl_msvc_arch_dir "${_amaigirl_msvc_host_dir}" DIRECTORY)
+        get_filename_component(_amaigirl_msvc_bin_root "${_amaigirl_msvc_arch_dir}" DIRECTORY)
+        get_filename_component(_amaigirl_msvc_tools_dir "${_amaigirl_msvc_bin_root}" DIRECTORY)
+        get_filename_component(_amaigirl_msvc_version_dir "${_amaigirl_msvc_tools_dir}" DIRECTORY)
+        get_filename_component(_amaigirl_vc_root_dir "${_amaigirl_msvc_version_dir}" DIRECTORY)
+        set(_amaigirl_redist_root "${_amaigirl_vc_root_dir}/Redist/MSVC")
+
+        if(EXISTS "${_amaigirl_redist_root}")
+            file(GLOB _amaigirl_redist_versions LIST_DIRECTORIES true "${_amaigirl_redist_root}/*")
+            list(SORT _amaigirl_redist_versions ORDER DESCENDING)
+            foreach(_amaigirl_redist_candidate ${_amaigirl_redist_versions})
+                set(_amaigirl_redist_crt_dir "${_amaigirl_redist_candidate}/x64/Microsoft.VC143.CRT")
+                if(EXISTS "${_amaigirl_redist_crt_dir}")
+                    set(_AMAIGIRL_MSVC_REDIST_CRT_DIR "${_amaigirl_redist_crt_dir}")
+                    break()
+                endif()
+            endforeach()
+        endif()
+    endif()
+
+    if(AMAIGIRL_WINDEPLOYQT_EXECUTABLE)
+        set(WINDEPLOYQT_EXECUTABLE "${AMAIGIRL_WINDEPLOYQT_EXECUTABLE}")
+    else()
+        find_program(WINDEPLOYQT_EXECUTABLE windeployqt)
+        if(NOT WINDEPLOYQT_EXECUTABLE AND DEFINED Qt6Core_DIR)
+            get_filename_component(_qt6core_dir_real "${Qt6Core_DIR}" REALPATH)
+            get_filename_component(_qt6core_cmake_dir "${_qt6core_dir_real}" DIRECTORY)
+            get_filename_component(_qt6_lib_dir "${_qt6core_cmake_dir}" DIRECTORY)
+            get_filename_component(_qt6_root_dir "${_qt6_lib_dir}" DIRECTORY)
+            set(_windeployqt_candidate "${_qt6_root_dir}/bin/windeployqt.exe")
+            if(EXISTS "${_windeployqt_candidate}")
+                set(WINDEPLOYQT_EXECUTABLE "${_windeployqt_candidate}")
+            endif()
+        endif()
+    endif()
+
+    if(WINDEPLOYQT_EXECUTABLE AND EXISTS "${WINDEPLOYQT_EXECUTABLE}")
+        set(AMAIGIRL_WINDOWS_STAGE_DIR "${CMAKE_BINARY_DIR}/AmaiGirl")
+        set(AMAIGIRL_WINDOWS_PACKAGE_ZIP "${CMAKE_BINARY_DIR}/AmaiGirl-windows.zip")
+        set(_AMAIGIRL_DEPLOY_WINDOWS_REDIST_COMMANDS "")
+        set(_AMAIGIRL_PACKAGE_WINDOWS_REDIST_COMMANDS "")
+        if(_AMAIGIRL_MSVC_REDIST_CRT_DIR)
+            set(_AMAIGIRL_DEPLOY_WINDOWS_REDIST_COMMANDS
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${_AMAIGIRL_MSVC_REDIST_CRT_DIR}" "$<TARGET_FILE_DIR:AmaiGirl>"
+            )
+            set(_AMAIGIRL_PACKAGE_WINDOWS_REDIST_COMMANDS
+                COMMAND ${CMAKE_COMMAND} -E copy_directory "${_AMAIGIRL_MSVC_REDIST_CRT_DIR}" "${AMAIGIRL_WINDOWS_STAGE_DIR}"
+            )
+        endif()
+
+        add_custom_target(deploy_windows
+            COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+                    --dir "$<TARGET_FILE_DIR:AmaiGirl>"
+                    --compiler-runtime
+                    --no-translations
+                    --no-opengl-sw
+                    "$<TARGET_FILE:AmaiGirl>"
+            ${_AMAIGIRL_DEPLOY_WINDOWS_REDIST_COMMANDS}
+            DEPENDS AmaiGirl
+            COMMENT "Deploying Qt runtime with windeployqt"
+            VERBATIM
+        )
+
+        add_custom_target(package_windows
+            COMMAND ${CMAKE_COMMAND} -E rm -rf "${AMAIGIRL_WINDOWS_STAGE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E rm -f "${AMAIGIRL_WINDOWS_PACKAGE_ZIP}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${AMAIGIRL_WINDOWS_STAGE_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:AmaiGirl>" "${AMAIGIRL_WINDOWS_STAGE_DIR}/AmaiGirl.exe"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/res" "${AMAIGIRL_WINDOWS_STAGE_DIR}/res"
+            COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+                    --dir "${AMAIGIRL_WINDOWS_STAGE_DIR}"
+                    --compiler-runtime
+                    --no-translations
+                    --no-opengl-sw
+                    "${AMAIGIRL_WINDOWS_STAGE_DIR}/AmaiGirl.exe"
+                ${_AMAIGIRL_PACKAGE_WINDOWS_REDIST_COMMANDS}
+            COMMAND ${CMAKE_COMMAND} -E tar cf "${AMAIGIRL_WINDOWS_PACKAGE_ZIP}" --format=zip "AmaiGirl"
+            DEPENDS AmaiGirl
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            COMMENT "Packaging Windows portable bundle"
+            VERBATIM
+        )
+
+        message(STATUS "Windows deployment targets enabled: deploy_windows, package_windows")
+    else()
+        message(STATUS "windeployqt not found, skip deploy_windows/package_windows targets")
+    endif()
+endif()
 
 # macOS: supply Info.plist from template
 if(APPLE)

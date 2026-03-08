@@ -19,6 +19,12 @@
 #if defined(Q_OS_MACOS)
 #include <ApplicationServices/ApplicationServices.h>
 #elif defined(Q_OS_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <Windows.h>
 #pragma comment(lib, "user32.lib")
 #endif
@@ -677,6 +683,7 @@ void Renderer::forwardWheelToSystem(const QPoint &globalPos, const QPoint &angle
 
 void Renderer::mousePressEvent(QMouseEvent *e) {
     if (e->button() == Qt::LeftButton) {
+        m_systemMoveActive = false;
         m_lastGlobalPos = e->globalPosition().toPoint();
         bool opaque = isOpaqueAtGlobal(m_lastGlobalPos);
         bool canSystemPassthrough = false;
@@ -696,6 +703,7 @@ void Renderer::mousePressEvent(QMouseEvent *e) {
             if (auto* topLevel = window()) {
                 if (auto* wh = topLevel->windowHandle()) {
                     m_forceMouseOpaqueDuringDrag = false;
+                    m_systemMoveActive = true;
                     wh->startSystemMove();
                     e->accept();
                     return;
@@ -708,6 +716,7 @@ void Renderer::mousePressEvent(QMouseEvent *e) {
                 if (auto* wh = topLevel->windowHandle()) {
                     m_forceMouseOpaqueDuringDrag = false;
                     if (wh->startSystemMove()) {
+                        m_systemMoveActive = true;
                         e->accept();
                         return;
                     }
@@ -725,6 +734,11 @@ void Renderer::mouseMoveEvent(QMouseEvent *e) {
         return;
     }
     if (e->buttons() & Qt::LeftButton) {
+        if (m_systemMoveActive) {
+            e->accept();
+            updateMouseTransparent();
+            return;
+        }
 #if defined(Q_OS_LINUX)
         if (QGuiApplication::platformName().startsWith(QStringLiteral("wayland"))) {
             e->accept();
@@ -748,6 +762,7 @@ void Renderer::mouseReleaseEvent(QMouseEvent *e) {
         e->ignore();
         return;
     }
+    m_systemMoveActive = false;
     m_forceMouseOpaqueDuringDrag = false;
     updateMouseTransparent();
 }

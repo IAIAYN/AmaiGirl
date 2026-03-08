@@ -20,7 +20,11 @@ AmaiGirl aims to become a cross-platform AI desktop assistant. The current imple
 
 #### Windows
 
-- TBD
+- Recommended environment: Windows 10/11
+- Build tools: Visual Studio 2022 (MSVC v143) or newer, or CMake + Ninja inside the matching MSVC developer environment
+- MinGW/GCC is not supported at the moment because the Live2D Cubism Windows libraries used by this repository are built for MSVC
+- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia), with `windeployqt` available
+- Live2D: make sure `sdk/cubism/lib/windows/x86_64/<toolset>/` contains the matching MSVC toolset libraries `Live2DCubismCore_MD.lib` / `Live2DCubismCore_MDd.lib`
 
 #### Linux
 
@@ -83,7 +87,26 @@ cmake --build build-release -j
 
 #### Windows
 
-- TBD
+- Standard build:
+
+```powershell
+cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release -j
+.\build-release\AmaiGirl.exe
+```
+
+- Portable package:
+
+```powershell
+cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --target package_windows -j
+```
+
+- Deployment notes:
+   - `deploy_windows`: deploys Qt runtime files next to the executable
+   - `package_windows`: creates a portable directory and outputs `AmaiGirl-windows.zip`
+   - `windeployqt` is discovered from `PATH` by default
+   - Override explicitly with `AMAIGIRL_WINDEPLOYQT_EXECUTABLE` if needed
 
 #### Linux
 

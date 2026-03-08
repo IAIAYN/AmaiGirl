@@ -166,6 +166,7 @@ private:
 
     // Click-through handling
     bool m_passthroughActive{false}; // true when current mouse sequence is forwarded to OS
+    bool m_systemMoveActive{false};
     bool isOpaqueAtGlobal(const QPoint& globalPos, float alphaThreshold = 0.05f) const;
     void forwardMousePressToSystem(const QPoint& globalPos);
     void forwardMouseMoveToSystem(const QPoint& globalPos);
