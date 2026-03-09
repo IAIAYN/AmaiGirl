@@ -2,7 +2,7 @@
   <img src="docs/app-icon.png" alt="AmaiGirl" width="120" />
   <h1>AmaiGirl</h1>
   <p><a href="README.md#zh-cn">简体中文</a> | <a href="README.en.md#en-us">English</a></p>
-  <p><strong>An AI desktop assistant with a cross-platform vision</strong> · Compatible with OpenAI-format API calls · Currently available on macOS 13.0+ and Linux (Wayland)</p>
+  <p><strong>A native AI desktop assistant with a cross-platform vision</strong> · Compatible with OpenAI-format API calls · Currently available on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland)</p>
   <p>
     <a href="https://github.com/IAIAYN/AmaiGirl/releases"><img src="https://img.shields.io/github/v/release/IAIAYN/AmaiGirl?display_name=tag" alt="Release" /></a>
     <a href="https://github.com/IAIAYN/AmaiGirl/blob/main/LICENSE"><img src="https://img.shields.io/github/license/IAIAYN/AmaiGirl" alt="License" /></a>
@@ -19,20 +19,21 @@
 AmaiGirl is an AI desktop assistant project built around three core values: **companionship, extensibility, and always-on desktop experience**.  
 It is more than a chat window — it aims to become a desktop companion that can talk, interact, and evolve continuously in your workflow.
 
-The current version provides a usable baseline on macOS 13.0+ and Linux (Wayland), and will continue expanding to more platforms.
+The current version provides a usable baseline on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland), and may continue expanding to more platforms.
 
 ## Positioning
 
-- **Goal**: Build a cross-platform AI desktop assistant
-- **Current Status**: Runnable on macOS 13.0+ and Linux (Wayland)
+- **Goal**: Build a cross-platform native AI desktop assistant
+- **Current Status**: Runnable on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland)
 - **Technical Direction**: Desktop resident app + Live2D character interaction + LLM chat + TTS playback
 
 ## Demo
 
 > Models shown in this demo are from bilibili creator [@菜菜爱吃饭ovo](https://space.bilibili.com/1851126283), non-commercial only, and are not included in this source repository or release app. Desktop wallpapers shown in demos are from the internet; please contact the maintainer if any infringement is involved.
 
-- [x] Main UI demo (macOS + Linux)
+- [x] Main UI demo (macOS + Windows + Linux)
   ![screenshot1](docs/screenshot1.png)
+  ![screenshot1.0](docs/screenshot1.0.png)
   ![screenshot1.1](docs/screenshot1.1.png)
 - [x] Chat demo
   ![screenshot2](docs/screenshot2.png)
@@ -59,13 +60,20 @@ The current version provides a usable baseline on macOS 13.0+ and Linux (Wayland
 
 - The app runs as a resident desktop assistant and can be controlled from the menu bar icon
 - **Use left mouse drag to move the model, right-click to switch poses (if available in the model), and mouse wheel to scale the model**
-- Menu supports: Show/Hide, Open Chat, Open Settings, About, Quit
+- Menu supports (shortcuts in parentheses):
+  - Show/Hide (macOS: `Cmd + H`, Windows / Linux: `Ctrl + H`)
+  - Open Chat (macOS: `Cmd + T`, Windows / Linux: `Ctrl + T`)
+  - Open Settings (macOS: `Cmd + S`, Windows / Linux: `Ctrl + S`)
+  - About
+  - Quit (macOS: `Cmd + Q`)
 - You can use `Reset Window` under `Settings -> Basic Settings`
 
 ### 2. Add & switch models
 
 1. Prepare Live2D model folders (one model per folder)
-2. In `Settings -> Basic Settings`, set `Model Path` to your model root directory (default: `~/.AmaiGirl/Models`)
+2. In `Settings -> Basic Settings`, set `Model Path` to your model root directory
+  - Default on macOS / Linux: `~/.AmaiGirl/Models`
+  - Default on Windows: `%USERPROFILE%/Documents/AmaiGirl/Models`
 3. In `Settings -> Basic Settings`, switch models via the `Current Model` dropdown
 4. After switching, related model config and chat context will be loaded automatically
 
@@ -100,30 +108,11 @@ After configuration, AI replies can trigger voice playback. If playback fails, t
 ### 5. Resources & paths
 
 - macOS packaged resource path: `Contents/Resources/...`
+- Windows build/portable package resource path: `<executable_dir>/res`
 - Linux build/install resource path: `<executable_dir>/res` or `../share/AmaiGirl/res`
+- Windows config path: `%APPDATA%/IAIAYN/AmaiGirl/Configs`
+- Windows chats/cache path: `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Chats` and `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Cache`
 - License files are available under the `licenses` directory
-
-### 6. Linux run & packaging notes
-
-- Current Linux path is **Wayland-first**; if Wayland is unavailable, the app warns and falls back to an available Qt backend.
-- To enable experimental transparent-area input passthrough on Wayland:
-  `AMAIGIRL_WAYLAND_PASSTHROUGH=1 ./AmaiGirl`
-
-AppImage packaging example (`package_appimage` target):
-
-```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target package_appimage -j
-./build/AmaiGirl-x86_64.AppImage
-```
-
-Portable build recommendation (avoid machine-specific paths):
-
-- By default, tools are discovered from system `PATH` (`linuxdeploy`, `appimagetool`, `qmake`)
-- You can override tool locations explicitly (recommended in CI/containers):
-  - `AMAIGIRL_LINUXDEPLOY_EXECUTABLE`
-  - `AMAIGIRL_APPIMAGETOOL_EXECUTABLE`
-  - `AMAIGIRL_QMAKE_EXECUTABLE`
 
 ## Development
 
@@ -141,8 +130,8 @@ It includes environment requirements, build methods, contribution workflow, codi
 
 ## Roadmap
 
-- [ ] Windows support
-- [x] Basic Linux (Wayland) support
+- [x] Windows support
+- [x] Basic Linux support
 - [ ] LLM long-term memory
 - [ ] Better character motion/expression quality (including VTube Studio model expression attempts)
 - [ ] STT support (speech-to-text input)

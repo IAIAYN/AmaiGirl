@@ -253,6 +253,11 @@ int main(int argc, char *argv[]) {
     SettingsManager::instance().load();
     SettingsManager::instance().bootstrap(QCoreApplication::applicationDirPath());
 
+    const QIcon appIcon(appResourcePath(QStringLiteral("icons/app-icon.png")));
+    if (!appIcon.isNull()) {
+        app.setWindowIcon(appIcon);
+    }
+
     QTranslator appTranslator;
     loadAppTranslator(app, appTranslator, SettingsManager::instance().currentLanguage());
 
@@ -260,6 +265,9 @@ int main(int argc, char *argv[]) {
     win.setWindowFlag(Qt::FramelessWindowHint, true);
     win.setWindowFlag(Qt::WindowStaysOnTopHint, true);
     win.setWindowFlag(Qt::NoDropShadowWindowHint, true);
+#if defined(Q_OS_WIN32)
+    win.setWindowFlag(Qt::Tool, true);
+#endif
     win.setAttribute(Qt::WA_TranslucentBackground, true);
 
     auto* renderer = new Renderer;
@@ -333,7 +341,16 @@ int main(int argc, char *argv[]) {
 
     // System tray (menu bar) icon and menu
     auto tray = new QSystemTrayIcon(&app);
-    QIcon trayIcon(QDir(resRoot).filePath(QStringLiteral("icons/menubar-icon.png")));
+    QIcon trayIcon(
+#if defined(Q_OS_MACOS)
+        QDir(resRoot).filePath(QStringLiteral("icons/menubar-icon.png"))
+#else
+        QDir(resRoot).filePath(QStringLiteral("icons/app-icon.png"))
+#endif
+    );
+    if (trayIcon.isNull()) {
+        trayIcon = app.windowIcon();
+    }
     tray->setIcon(trayIcon);
     tray->setToolTip(QStringLiteral("AmaiGirl"));
 

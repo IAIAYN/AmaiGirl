@@ -51,6 +51,36 @@ static QString systemLanguageCode()
     return normalizeLanguageCode(n);
 }
 
+static QString writableLocationOrFallback(QStandardPaths::StandardLocation location, const QString& fallback)
+{
+    const QString path = QStandardPaths::writableLocation(location);
+    return path.isEmpty() ? fallback : path;
+}
+
+static QString appConfigBaseDir()
+{
+#if defined(Q_OS_WIN32)
+    return writableLocationOrFallback(
+        QStandardPaths::AppConfigLocation,
+        QDir(QDir::homePath()).filePath(QStringLiteral("AppData/Roaming/IAIAYN/AmaiGirl"))
+    );
+#else
+    return QDir(QDir::homePath()).filePath(QStringLiteral(".AmaiGirl"));
+#endif
+}
+
+static QString appLocalDataBaseDir()
+{
+#if defined(Q_OS_WIN32)
+    return writableLocationOrFallback(
+        QStandardPaths::AppLocalDataLocation,
+        QDir(QDir::homePath()).filePath(QStringLiteral("AppData/Local/IAIAYN/AmaiGirl"))
+    );
+#else
+    return QDir(QDir::homePath()).filePath(QStringLiteral(".AmaiGirl"));
+#endif
+}
+
 SettingsManager& SettingsManager::instance()
 {
     static SettingsManager s;
@@ -59,7 +89,7 @@ SettingsManager& SettingsManager::instance()
 
 QString SettingsManager::configDir() const
 {
-    return QDir::homePath() + "/.AmaiGirl/Configs";
+    return QDir(appConfigBaseDir()).filePath(QStringLiteral("Configs"));
 }
 
 QString SettingsManager::configPath() const
@@ -69,7 +99,12 @@ QString SettingsManager::configPath() const
 
 QString SettingsManager::defaultModelsRoot() const
 {
+#if defined(Q_OS_WIN32)
+    const QString documentsDir = writableLocationOrFallback(QStandardPaths::DocumentsLocation, QDir::homePath());
+    return QDir(documentsDir).filePath(QStringLiteral("AmaiGirl/Models"));
+#else
     return QDir(QDir::homePath()).filePath(".AmaiGirl/Models");
+#endif
 }
 
 QString SettingsManager::modelsRoot() const
@@ -174,7 +209,7 @@ void SettingsManager::setWindowGeometry(const QRect& r)
 
 QString SettingsManager::cacheDir() const
 {
-    const QString dir = QDir::homePath() + QStringLiteral("/.AmaiGirl/.Cache");
+    const QString dir = QDir(appLocalDataBaseDir()).filePath(QStringLiteral("Cache"));
     QDir().mkpath(dir);
     return dir;
 }
@@ -355,7 +390,7 @@ QString SettingsManager::modelConfigPath(const QString& modelFolder) const
 
 QString SettingsManager::chatsDir() const
 {
-    return QDir::homePath() + "/.AmaiGirl/Chats";
+    return QDir(appLocalDataBaseDir()).filePath(QStringLiteral("Chats"));
 }
 
 QString SettingsManager::chatPathForModel(const QString& modelFolder) const
