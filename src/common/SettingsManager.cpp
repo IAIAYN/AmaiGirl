@@ -209,7 +209,7 @@ void SettingsManager::setWindowGeometry(const QRect& r)
 
 QString SettingsManager::cacheDir() const
 {
-    const QString dir = QDir(appLocalDataBaseDir()).filePath(QStringLiteral("Cache"));
+    const QString dir = QDir(appLocalDataBaseDir()).filePath(QStringLiteral(".Cache"));
     QDir().mkpath(dir);
     return dir;
 }
