@@ -20,7 +20,11 @@
 
 #### Windows
 
-- TBD
+- 建议环境：Windows 10/11
+- 编译工具：Visual Studio 2022（MSVC v143）或更新版本，或在对应 MSVC 开发者环境中使用 CMake + Ninja
+- 当前不支持 MinGW/GCC：仓库使用的 Live2D Cubism Windows 库为 MSVC 产物
+- Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia），并确保 `windeployqt` 可用
+- Live2D：请确认 `sdk/cubism/lib/windows/x86_64/<toolset>/` 下存在对应 MSVC 工具集的 `Live2DCubismCore_MD.lib` / `Live2DCubismCore_MDd.lib`
 
 #### Linux
 
@@ -83,7 +87,26 @@ cmake --build build-release -j
 
 #### Windows
 
-- TBD
+- 常规构建：
+
+```powershell
+cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release -j
+.\build-release\AmaiGirl.exe
+```
+
+- 便携包打包：
+
+```powershell
+cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --target package_windows -j
+```
+
+- 部署说明：
+   - `deploy_windows`：将 Qt 运行时部署到可执行文件目录
+   - `package_windows`：生成便携目录并输出 `AmaiGirl-windows.zip`
+   - 默认通过 `PATH` 查找 `windeployqt`
+   - 如需显式指定路径，可使用 `AMAIGIRL_WINDEPLOYQT_EXECUTABLE`
 
 #### Linux
 

@@ -18,6 +18,15 @@
 #include "common/SettingsManager.hpp"
 #if defined(Q_OS_MACOS)
 #include <ApplicationServices/ApplicationServices.h>
+#elif defined(Q_OS_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <Windows.h>
+#pragma comment(lib, "user32.lib")
 #endif
 
 // physics removed
@@ -674,10 +683,11 @@ void Renderer::forwardWheelToSystem(const QPoint &globalPos, const QPoint &angle
 
 void Renderer::mousePressEvent(QMouseEvent *e) {
     if (e->button() == Qt::LeftButton) {
+        m_systemMoveActive = false;
         m_lastGlobalPos = e->globalPosition().toPoint();
         bool opaque = isOpaqueAtGlobal(m_lastGlobalPos);
         bool canSystemPassthrough = false;
-#if defined(Q_OS_MACOS)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN32)
         canSystemPassthrough = true;
 #endif
         m_passthroughActive = (!opaque && canSystemPassthrough); // transparent -> forward to OS
@@ -693,9 +703,23 @@ void Renderer::mousePressEvent(QMouseEvent *e) {
             if (auto* topLevel = window()) {
                 if (auto* wh = topLevel->windowHandle()) {
                     m_forceMouseOpaqueDuringDrag = false;
+                    m_systemMoveActive = true;
                     wh->startSystemMove();
                     e->accept();
                     return;
+                }
+            }
+        }
+#elif defined(Q_OS_WIN32)
+        if (opaque) {
+            if (auto* topLevel = window()) {
+                if (auto* wh = topLevel->windowHandle()) {
+                    m_forceMouseOpaqueDuringDrag = false;
+                    if (wh->startSystemMove()) {
+                        m_systemMoveActive = true;
+                        e->accept();
+                        return;
+                    }
                 }
             }
         }
@@ -710,6 +734,11 @@ void Renderer::mouseMoveEvent(QMouseEvent *e) {
         return;
     }
     if (e->buttons() & Qt::LeftButton) {
+        if (m_systemMoveActive) {
+            e->accept();
+            updateMouseTransparent();
+            return;
+        }
 #if defined(Q_OS_LINUX)
         if (QGuiApplication::platformName().startsWith(QStringLiteral("wayland"))) {
             e->accept();
@@ -733,6 +762,7 @@ void Renderer::mouseReleaseEvent(QMouseEvent *e) {
         e->ignore();
         return;
     }
+    m_systemMoveActive = false;
     m_forceMouseOpaqueDuringDrag = false;
     updateMouseTransparent();
 }
@@ -797,7 +827,7 @@ void Renderer::updateMouseTransparent() {
 
     if (m_forceMouseOpaqueDuringDrag) {
         setAttribute(Qt::WA_TransparentForMouseEvents, false);
-#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX) || defined(Q_OS_WIN32)
         if (auto* w = window()) {
             if (auto* wh = w->windowHandle()) {
                 wh->setFlag(Qt::WindowTransparentForInput, false);
@@ -809,7 +839,7 @@ void Renderer::updateMouseTransparent() {
     QPoint g = QCursor::pos();
     bool opaque = isOpaqueAtGlobal(g);
     // 1) 确保顶层窗口在透明区域真正穿透
-#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX) || defined(Q_OS_WIN32)
     if (auto* w = window()) {
         if (auto* wh = w->windowHandle()) {
             wh->setFlag(Qt::WindowTransparentForInput, !opaque);

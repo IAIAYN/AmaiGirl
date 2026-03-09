@@ -30,10 +30,17 @@ class Frame:
 
 
 def run_git(args: List[str]) -> str:
-    result = subprocess.run(["git", *args], capture_output=True, text=True)
+    result = subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"git {' '.join(args)} failed")
-    return result.stdout
+    return result.stdout or ""
+
 
 
 def changed_cpp_files(base: str, head: str) -> List[str]:

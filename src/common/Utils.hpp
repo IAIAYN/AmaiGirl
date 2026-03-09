@@ -26,6 +26,7 @@ float easingSine(float rate);
 
 // Resource path helpers.
 // - macOS bundle: <App>.app/Contents/Resources
+// - Windows portable build/package: <appDir>/res
 // - Linux install/AppImage: prefer APPDIR and ../share/AmaiGirl/res when available
 // - Fallback: <appDir>/res (dev/local layout)
 QString appResourceRootPath();
