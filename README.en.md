@@ -2,7 +2,7 @@
   <img src="docs/app-icon.png" alt="AmaiGirl" width="120" />
   <h1>AmaiGirl</h1>
   <p><a href="README.md#zh-cn">简体中文</a> | <a href="README.en.md#en-us">English</a></p>
-  <p><strong>An AI desktop assistant with a cross-platform vision</strong> · Compatible with OpenAI-format API calls · Currently available on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland)</p>
+  <p><strong>A native AI desktop assistant with a cross-platform vision</strong> · Compatible with OpenAI-format API calls · Currently available on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland)</p>
   <p>
     <a href="https://github.com/IAIAYN/AmaiGirl/releases"><img src="https://img.shields.io/github/v/release/IAIAYN/AmaiGirl?display_name=tag" alt="Release" /></a>
     <a href="https://github.com/IAIAYN/AmaiGirl/blob/main/LICENSE"><img src="https://img.shields.io/github/license/IAIAYN/AmaiGirl" alt="License" /></a>
@@ -23,7 +23,7 @@ The current version provides a usable baseline on macOS 13.0+, Windows 10/11 (x8
 
 ## Positioning
 
-- **Goal**: Build a cross-platform AI desktop assistant
+- **Goal**: Build a cross-platform native AI desktop assistant
 - **Current Status**: Runnable on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland)
 - **Technical Direction**: Desktop resident app + Live2D character interaction + LLM chat + TTS playback
 
