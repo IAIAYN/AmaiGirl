@@ -112,6 +112,7 @@ ChatController::ChatController(QObject* parent)
             m_lipFrames.clear();
             m_lipFrameIndex = 0;
             m_lipSyncActiveForPlayback = false;
+            releasePlaybackSource();
             if (m_renderer) {
                 m_renderer->setLipSyncActive(false);
                 m_renderer->setLipSyncValue(0.0f);
@@ -223,12 +224,24 @@ void ChatController::stopPlayback()
     m_lipFrames.clear();
     m_lipFrameIndex = 0;
     m_lipSyncActiveForPlayback = false;
-    if (m_player) m_player->stop();
+    releasePlaybackSource();
     if (m_renderer) {
         m_renderer->setLipSyncActive(false);
         m_renderer->setLipSyncValue(0.0f);
     }
     m_wavLip.reset();
+}
+
+void ChatController::releasePlaybackSource()
+{
+    if (!m_player)
+        return;
+
+    if (m_player->playbackState() != QMediaPlayer::StoppedState)
+        m_player->stop();
+
+    if (!m_player->source().isEmpty())
+        m_player->setSource(QUrl());
 }
 
 void ChatController::startWavLipSyncClock()

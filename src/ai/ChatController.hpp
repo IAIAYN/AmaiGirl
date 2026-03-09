@@ -52,6 +52,7 @@ private:
 
     void stopPlayback();
     void startPlaybackWithLip(const QString& audioPath);
+    void releasePlaybackSource();
 
     // --- WAV lipsync (WavHandler-like) ---
     bool loadWavForLipSync(const QString& wavPath);
