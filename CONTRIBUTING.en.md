@@ -8,7 +8,7 @@
 
 Thank you for your interest in contributing to AmaiGirl.
 
-AmaiGirl aims to become a cross-platform AI desktop assistant. The current implementation focuses on macOS first, with more platforms planned.
+AmaiGirl aims to become a cross-platform native AI desktop assistant. The current implementation is available on macOS, Windows, and Linux.
 
 ### 1. Prerequisites
 
@@ -20,7 +20,7 @@ AmaiGirl aims to become a cross-platform AI desktop assistant. The current imple
 
 #### Windows
 
-- Recommended environment: Windows 10/11
+- Recommended environment: Windows 10/11 (x86_64)
 - Build tools: Visual Studio 2022 (MSVC v143) or newer, or CMake + Ninja inside the matching MSVC developer environment
 - MinGW/GCC is not supported at the moment because the Live2D Cubism Windows libraries used by this repository are built for MSVC
 - Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia), with `windeployqt` available

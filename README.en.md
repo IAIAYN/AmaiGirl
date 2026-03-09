@@ -2,7 +2,7 @@
   <img src="docs/app-icon.png" alt="AmaiGirl" width="120" />
   <h1>AmaiGirl</h1>
   <p><a href="README.md#zh-cn">简体中文</a> | <a href="README.en.md#en-us">English</a></p>
-  <p><strong>An AI desktop assistant with a cross-platform vision</strong> · Compatible with OpenAI-format API calls · Currently available on macOS 13.0+, Windows 10/11, and Linux (Wayland)</p>
+  <p><strong>An AI desktop assistant with a cross-platform vision</strong> · Compatible with OpenAI-format API calls · Currently available on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland)</p>
   <p>
     <a href="https://github.com/IAIAYN/AmaiGirl/releases"><img src="https://img.shields.io/github/v/release/IAIAYN/AmaiGirl?display_name=tag" alt="Release" /></a>
     <a href="https://github.com/IAIAYN/AmaiGirl/blob/main/LICENSE"><img src="https://img.shields.io/github/license/IAIAYN/AmaiGirl" alt="License" /></a>
@@ -19,21 +19,21 @@
 AmaiGirl is an AI desktop assistant project built around three core values: **companionship, extensibility, and always-on desktop experience**.  
 It is more than a chat window — it aims to become a desktop companion that can talk, interact, and evolve continuously in your workflow.
 
-The current version provides a usable baseline on macOS 13.0+, Windows 10/11, and Linux (Wayland), and will continue expanding to more platforms.
+The current version provides a usable baseline on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland), and may continue expanding to more platforms.
 
 ## Positioning
 
 - **Goal**: Build a cross-platform AI desktop assistant
-- **Current Status**: Runnable on macOS 13.0+, Windows 10/11, and Linux (Wayland)
+- **Current Status**: Runnable on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland)
 - **Technical Direction**: Desktop resident app + Live2D character interaction + LLM chat + TTS playback
 
 ## Demo
 
 > Models shown in this demo are from bilibili creator [@菜菜爱吃饭ovo](https://space.bilibili.com/1851126283), non-commercial only, and are not included in this source repository or release app. Desktop wallpapers shown in demos are from the internet; please contact the maintainer if any infringement is involved.
 
-- [x] Main UI demo (macOS + Linux)
+- [x] Main UI demo (macOS + Windows + Linux)
   ![screenshot1](docs/screenshot1.png)
-  ![screennshot1.0](docs/screenshot1.0.png)
+  ![screenshot1.0](docs/screenshot1.0.png)
   ![screenshot1.1](docs/screenshot1.1.png)
 - [x] Chat demo
   ![screenshot2](docs/screenshot2.png)
@@ -60,7 +60,12 @@ The current version provides a usable baseline on macOS 13.0+, Windows 10/11, an
 
 - The app runs as a resident desktop assistant and can be controlled from the menu bar icon
 - **Use left mouse drag to move the model, right-click to switch poses (if available in the model), and mouse wheel to scale the model**
-- Menu supports: Show/Hide, Open Chat, Open Settings, About, Quit
+- Menu supports (shortcuts in parentheses):
+  - Show/Hide (macOS: `Cmd + H`, Windows / Linux: `Ctrl + H`)
+  - Open Chat (macOS: `Cmd + T`, Windows / Linux: `Ctrl + T`)
+  - Open Settings (macOS: `Cmd + S`, Windows / Linux: `Ctrl + S`)
+  - About
+  - Quit (macOS: `Cmd + Q`)
 - You can use `Reset Window` under `Settings -> Basic Settings`
 
 ### 2. Add & switch models
@@ -109,56 +114,6 @@ After configuration, AI replies can trigger voice playback. If playback fails, t
 - Windows chats/cache path: `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Chats` and `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Cache`
 - License files are available under the `licenses` directory
 
-### 6. Windows build & packaging notes
-
-- Recommended environment: Windows 10/11 + Visual Studio 2022 (MSVC v143) or newer
-- The current Windows path is MSVC-only; MinGW/GCC is not supported because the required Live2D Cubism Windows libraries in this repository are built for MSVC
-- Qt 6 should include: Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia
-- After building the executable, use `deploy_windows` to copy Qt runtime files, or `package_windows` to generate a portable zip bundle
-
-CLI build example (Ninja):
-
-```powershell
-cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release -j
-.\build-release\AmaiGirl.exe
-```
-
-Portable package example:
-
-```powershell
-cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release --target package_windows -j
-```
-
-Portable/CI recommendation:
-
-- By default, `windeployqt` is discovered from system `PATH`
-- You can override its location explicitly with:
-  - `AMAIGIRL_WINDEPLOYQT_EXECUTABLE`
-
-### 7. Linux run & packaging notes
-
-- Current Linux path is **Wayland-first**; if Wayland is unavailable, the app warns and falls back to an available Qt backend.
-- To enable experimental transparent-area input passthrough on Wayland:
-  `AMAIGIRL_WAYLAND_PASSTHROUGH=1 ./AmaiGirl`
-
-AppImage packaging example (`package_appimage` target):
-
-```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target package_appimage -j
-./build/AmaiGirl-x86_64.AppImage
-```
-
-Portable build recommendation (avoid machine-specific paths):
-
-- By default, tools are discovered from system `PATH` (`linuxdeploy`, `appimagetool`, `qmake`)
-- You can override tool locations explicitly (recommended in CI/containers):
-  - `AMAIGIRL_LINUXDEPLOY_EXECUTABLE`
-  - `AMAIGIRL_APPIMAGETOOL_EXECUTABLE`
-  - `AMAIGIRL_QMAKE_EXECUTABLE`
-
 ## Development
 
 Detailed development instructions are in a separate document:
@@ -176,7 +131,7 @@ It includes environment requirements, build methods, contribution workflow, codi
 ## Roadmap
 
 - [x] Windows support
-- [x] Basic Linux (Wayland) support
+- [x] Basic Linux support
 - [ ] LLM long-term memory
 - [ ] Better character motion/expression quality (including VTube Studio model expression attempts)
 - [ ] STT support (speech-to-text input)

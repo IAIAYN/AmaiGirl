@@ -8,7 +8,7 @@
 
 感谢你对 AmaiGirl 的关注与贡献！
 
-本项目目标是打造全平台 AI 桌面助手。当前以 macOS 为首个实现版本，后续会持续扩展到更多平台。
+本项目目标是打造全平台原生的 AI 桌面助手。当前实现了 macOS、Windows 和 Linux 平台的版本。
 
 ### 1. 开发前准备
 
@@ -20,7 +20,7 @@
 
 #### Windows
 
-- 建议环境：Windows 10/11
+- 建议环境：Windows 10/11（x86_64）
 - 编译工具：Visual Studio 2022（MSVC v143）或更新版本，或在对应 MSVC 开发者环境中使用 CMake + Ninja
 - 当前不支持 MinGW/GCC：仓库使用的 Live2D Cubism Windows 库为 MSVC 产物
 - Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia），并确保 `windeployqt` 可用
