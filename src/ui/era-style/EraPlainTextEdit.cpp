@@ -20,7 +20,7 @@ QString toRgba(const QColor& color)
         .arg(color.blue())
         .arg(QString::number(color.alphaF(), 'f', 3));
 }
-}
+}  // namespace
 
 EraPlainTextEdit::EraPlainTextEdit(QWidget* parent)
     : QPlainTextEdit(parent)

@@ -35,4 +35,4 @@ namespace EraStyleColor
     inline const QColor PrimaryBorder{0xd5, 0xd6, 0xd9, 0xff};
     inline const QColor SecondaryBorder{0xeb, 0xed, 0xf0, 0xff};
     inline const QColor ThreeLevels{0xeb, 0xed, 0xf0, 0xff};
-}
+}  // namespace EraStyleColor

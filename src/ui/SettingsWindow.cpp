@@ -425,7 +425,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         d->ttsKey = new EraLineEdit(SettingsManager::instance().ttsApiKey(), d->aiTab);
         d->ttsKey->setFixedHeight(26);
         d->ttsKey->setEchoMode(QLineEdit::Password);
-        d->ttsModel = new EraLineEdit(SettingsManager::instance().ttsModel(), d->aiTab);   
+        d->ttsModel = new EraLineEdit(SettingsManager::instance().ttsModel(), d->aiTab);
         d->ttsModel->setFixedHeight(26);
         d->ttsVoice = new EraLineEdit(SettingsManager::instance().ttsVoice(), d->aiTab);
         d->ttsVoice->setFixedHeight(26);

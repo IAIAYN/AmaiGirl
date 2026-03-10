@@ -190,7 +190,7 @@ EraButton::Palette EraButton::paletteForTone() const
     switch (m_tone)
     {
     case Tone::Link:
-        return {EraStyleColor::Link, EraStyleColor::LinkHover, EraStyleColor::LinkClick, 
+        return {EraStyleColor::Link, EraStyleColor::LinkHover, EraStyleColor::LinkClick,
             EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
              EraStyleColor::Link, EraStyleColor::LinkHover, EraStyleColor::LinkClick};
     case Tone::Success:
@@ -202,16 +202,16 @@ EraButton::Palette EraButton::paletteForTone() const
              EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
               EraStyleColor::Warning, EraStyleColor::WarningHover, EraStyleColor::WarningClick};
     case Tone::Danger:
-        return {EraStyleColor::Danger, EraStyleColor::DangerHover, EraStyleColor::DangerClick, 
+        return {EraStyleColor::Danger, EraStyleColor::DangerHover, EraStyleColor::DangerClick,
             EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
              EraStyleColor::Danger, EraStyleColor::DangerHover, EraStyleColor::DangerClick};
     case Tone::Info:
-        return {EraStyleColor::Info, EraStyleColor::InfoHover, EraStyleColor::InfoClick, 
+        return {EraStyleColor::Info, EraStyleColor::InfoHover, EraStyleColor::InfoClick,
             EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
              EraStyleColor::Info, EraStyleColor::InfoHover, EraStyleColor::InfoClick};
     case Tone::Neutral:
     default:
-        return {EraStyleColor::PrimaryBorder, EraStyleColor::LinkHover, EraStyleColor::LinkClick, 
+        return {EraStyleColor::PrimaryBorder, EraStyleColor::LinkHover, EraStyleColor::LinkClick,
             EraStyleColor::SubordinateText, EraStyleColor::LinkHover, EraStyleColor::LinkClick, EraStyleColor::DisabledText,
              EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite};
     }

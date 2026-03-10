@@ -18,7 +18,7 @@ QString toRgba(const QColor& color)
         .arg(color.blue())
         .arg(QString::number(color.alphaF(), 'f', 3));
 }
-}
+}  // namespace
 
 EraLineEdit::EraLineEdit(QWidget* parent)
     : QLineEdit(parent)

@@ -37,7 +37,7 @@ public:
         return size;
     }
 };
-}
+}  // namespace
 
 EraComboBox::EraComboBox(QWidget* parent)
     : QComboBox(parent)
