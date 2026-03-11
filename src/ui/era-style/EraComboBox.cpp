@@ -47,18 +47,23 @@ EraComboBox::EraComboBox(QWidget* parent)
 
 QSize EraComboBox::sizeHint() const
 {
-    QSize size = QComboBox::sizeHint();
-    size.setHeight(std::max(size.height(), kMinHeight));
-    size.setWidth(std::max(size.width(), 120));
-    return size;
+    int maxTextWidth = 0;
+    for (int i = 0; i < count(); ++i)
+        maxTextWidth = std::max(maxTextWidth, fontMetrics().horizontalAdvance(itemText(i)));
+
+    if (maxTextWidth == 0)
+        maxTextWidth = fontMetrics().horizontalAdvance(currentText().isEmpty() ? placeholderText() : currentText());
+
+    const int w = std::max(kPaddingH * 2 + kArrowAreaW + maxTextWidth, 120);
+    const int h = std::max(minimumHeight(), kMinHeight);
+    return QSize(w, h);
 }
 
 QSize EraComboBox::minimumSizeHint() const
 {
-    QSize size = QComboBox::minimumSizeHint();
-    size.setHeight(std::max(size.height(), kMinHeight));
-    size.setWidth(std::max(size.width(), 88));
-    return size;
+    const int w = std::max(kPaddingH * 2 + kArrowAreaW, 88);
+    const int h = std::max(minimumHeight(), kMinHeight);
+    return QSize(w, h);
 }
 
 void EraComboBox::paintEvent(QPaintEvent* event)

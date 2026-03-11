@@ -11,8 +11,9 @@
 #include <QJsonValue>
 #include <QApplication>
 #include <QPalette>
-#include <QTabWidget>
+#include <QStackedWidget>
 #include <QVBoxLayout>
+#include "ui/era-style/EraTabBar.hpp"
 #include <QHBoxLayout>
 #include <QFormLayout>
 #include <QComboBox>
@@ -69,7 +70,8 @@ static bool copyRecursively(const QString& srcPath, const QString& dstPath) {
 
 class SettingsWindow::Impl {
 public:
-    QTabWidget* tabs{nullptr};
+    EraTabBar*     tabs{nullptr};
+    QStackedWidget* tabStack{nullptr};
     QWidget* basic{nullptr};
     QFormLayout* basicForm{nullptr};
     QWidget* pathRowWidget{nullptr};
@@ -172,15 +174,18 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
 
     auto rootLay = new QVBoxLayout(d->central);
     rootLay->setContentsMargins(12,12,12,12);
-    d->tabs = new QTabWidget(d->central);
+    d->tabs = new EraTabBar(d->central);
+    d->tabStack = new QStackedWidget(d->central);
     rootLay->addWidget(d->tabs);
-    connect(d->tabs, &QTabWidget::currentChanged, this, [this](int){
+    rootLay->addWidget(d->tabStack, 1);
+    connect(d->tabs, &EraTabBar::currentChanged, this, [this](int index){
+        d->tabStack->setCurrentIndex(index);
         if (auto* fw = QApplication::focusWidget()) fw->clearFocus();
         d->tabs->setFocus(Qt::OtherFocusReason);
     });
 
     // Basic tab
-    d->basic = new QWidget(d->tabs);
+    d->basic = new QWidget(d->tabStack);
     auto form = new QFormLayout(d->basic);
     d->basicForm = form;
 
@@ -236,10 +241,11 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     }
     form->addRow(tr("当前语言："), d->languageCombo);
 
-    d->tabs->addTab(d->basic, tr("基本设置"));
+    d->tabStack->addWidget(d->basic);
+    d->tabs->addTab(tr("基本设置"));
 
     // Model settings tab
-    d->modelTab = new QWidget(d->tabs);
+    d->modelTab = new QWidget(d->tabStack);
     auto vbox = new QVBoxLayout(d->modelTab);
     auto row1 = new QHBoxLayout(); row1->setSpacing(6); row1->setContentsMargins(0,0,0,0);
     d->curModelName = new QLabel("", d->modelTab);
@@ -296,10 +302,11 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     vbox->addWidget(mkInlineTipRow(d->chkGaze,    tr("眼球、头部与身体随鼠标方向轻微转动，远距离时幅度会衰减。默认关闭；开启后将屏蔽自动呼吸对头部的影响。关闭后恢复眼球微动策略。"), &d->tipGaze));
     vbox->addWidget(mkInlineTipRow(d->chkPhysics, tr("根据模型 physics3.json 的配置驱动物理（如头发/衣物摆动）。关闭后复位受影响参数。"), &d->tipPhysics));
     vbox->addStretch(1);
-    d->tabs->addTab(d->modelTab, tr("模型设置"));
+    d->tabStack->addWidget(d->modelTab);
+    d->tabs->addTab(tr("模型设置"));
 
     // ---- AI tab ----
-    d->aiTab = new QWidget(d->tabs);
+    d->aiTab = new QWidget(d->tabStack);
     {
         auto lay = new QVBoxLayout(d->aiTab);
         auto form2 = new QFormLayout();
@@ -492,10 +499,11 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         connect(d->ttsModel, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsModel(t); });
         connect(d->ttsVoice, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsVoice(t); });
     }
-    d->tabs->insertTab(2, d->aiTab, tr("AI设置"));
+    d->tabStack->addWidget(d->aiTab);
+    d->tabs->addTab(tr("AI设置"));
 
     // Advanced tab
-    d->advancedTab = new QWidget(d->tabs);
+    d->advancedTab = new QWidget(d->tabStack);
     auto advLay = new QFormLayout(d->advancedTab);
     d->advancedForm = advLay;
     d->texCapCombo = new EraComboBox(d->advancedTab); d->texCapCombo->addItems({"4096","3072","2048","1024"});
@@ -584,7 +592,8 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     advLay->addRow(tr("清理："), cleanupRow);
 
     advLay->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
-    d->tabs->addTab(d->advancedTab, tr("高级设置"));
+    d->tabStack->addWidget(d->advancedTab);
+    d->tabs->addTab(tr("高级设置"));
 
     auto confirm = [this](const QString& title, const QString& text) -> bool {
         auto ret = QMessageBox::question(this, title, text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);

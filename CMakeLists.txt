@@ -354,6 +354,8 @@ set(UI_SOURCES
     src/ui/era-style/EraSwitch.cpp
     src/ui/era-style/EraComboBox.hpp
     src/ui/era-style/EraComboBox.cpp
+    src/ui/era-style/EraTabBar.hpp
+    src/ui/era-style/EraTabBar.cpp
     src/ui/SettingsWindow.hpp
     src/ui/SettingsWindow.cpp
     src/ui/AboutWindow.hpp
