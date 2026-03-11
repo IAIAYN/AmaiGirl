@@ -39,6 +39,32 @@ static bool isLinuxWayland()
 #endif
 }
 
+#if defined(Q_OS_MACOS)
+static QIcon resolveMacTrayIcon(const QString& resRoot, const QIcon& fallbackIcon)
+{
+    const QString preferredIconPath =
+        QDir(resRoot).filePath(QStringLiteral("icons/menubar-icon-dark.png"));
+    const QString fallbackMenubarIconPath =
+        QDir(resRoot).filePath(QStringLiteral("icons/menubar-icon.png"));
+
+    QIcon trayIcon(preferredIconPath);
+    if (trayIcon.isNull()) {
+        trayIcon = QIcon(fallbackMenubarIconPath);
+    }
+    if (trayIcon.isNull()) {
+        trayIcon = fallbackIcon;
+    }
+
+    // Mark the menu bar icon as a template/mask icon so macOS automatically
+    // renders it with the correct contrast for light and dark menu bar backgrounds.
+    if (!trayIcon.isNull()) {
+        trayIcon.setIsMask(true);
+    }
+
+    return trayIcon;
+}
+#endif
+
 static void cacheWindowGeometry(QWidget* w)
 {
 #if defined(Q_OS_LINUX)
@@ -341,17 +367,15 @@ int main(int argc, char *argv[]) {
 
     // System tray (menu bar) icon and menu
     auto tray = new QSystemTrayIcon(&app);
-    QIcon trayIcon(
 #if defined(Q_OS_MACOS)
-        QDir(resRoot).filePath(QStringLiteral("icons/menubar-icon.png"))
+    tray->setIcon(resolveMacTrayIcon(resRoot, app.windowIcon()));
 #else
-        QDir(resRoot).filePath(QStringLiteral("icons/app-icon.png"))
-#endif
-    );
+    QIcon trayIcon(QDir(resRoot).filePath(QStringLiteral("icons/app-icon.png")));
     if (trayIcon.isNull()) {
         trayIcon = app.windowIcon();
     }
     tray->setIcon(trayIcon);
+#endif
     tray->setToolTip(QStringLiteral("AmaiGirl"));
 
     auto menu = new QMenu();
