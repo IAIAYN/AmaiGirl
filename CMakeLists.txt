@@ -341,6 +341,21 @@ set(ENGINE_SOURCES
     src/engine/PhysicsEngine.cpp
 )
 set(UI_SOURCES
+    src/ui/era-style/EraStyleColor.hpp
+    src/ui/era-style/EraButton.hpp
+    src/ui/era-style/EraButton.cpp
+    src/ui/era-style/EraTextEdit.hpp
+    src/ui/era-style/EraTextEdit.cpp
+    src/ui/era-style/EraLineEdit.hpp
+    src/ui/era-style/EraLineEdit.cpp
+    src/ui/era-style/EraPlainTextEdit.hpp
+    src/ui/era-style/EraPlainTextEdit.cpp
+    src/ui/era-style/EraSwitch.hpp
+    src/ui/era-style/EraSwitch.cpp
+    src/ui/era-style/EraComboBox.hpp
+    src/ui/era-style/EraComboBox.cpp
+    src/ui/era-style/EraTabBar.hpp
+    src/ui/era-style/EraTabBar.cpp
     src/ui/SettingsWindow.hpp
     src/ui/SettingsWindow.cpp
     src/ui/AboutWindow.hpp
