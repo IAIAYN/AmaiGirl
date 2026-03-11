@@ -11,13 +11,18 @@
 #include <QJsonValue>
 #include <QApplication>
 #include <QPalette>
-#include <QTabWidget>
+#include <QStackedWidget>
 #include <QVBoxLayout>
+#include "ui/era-style/EraTabBar.hpp"
 #include <QHBoxLayout>
 #include <QFormLayout>
 #include <QComboBox>
+#include "ui/era-style/EraComboBox.hpp"
 #include <QLabel>
 #include <QPushButton>
+#include <QSignalBlocker>
+#include <QDebug>
+#include "ui/era-style/EraButton.hpp"
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QDesktopServices>
@@ -27,11 +32,14 @@
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QCheckBox>
+#include "ui/era-style/EraSwitch.hpp"
 #include <QScreen>
 #include <QGuiApplication>
 #include <QCursor>
 #include <QLineEdit>
+#include "ui/era-style/EraLineEdit.hpp"
 #include <QPlainTextEdit>
+#include "ui/era-style/EraPlainTextEdit.hpp"
 #include <QLocale>
 #include <QtGlobal>
 
@@ -62,46 +70,47 @@ static bool copyRecursively(const QString& srcPath, const QString& dstPath) {
 
 class SettingsWindow::Impl {
 public:
-    QTabWidget* tabs{nullptr};
+    EraTabBar*     tabs{nullptr};
+    QStackedWidget* tabStack{nullptr};
     QWidget* basic{nullptr};
     QFormLayout* basicForm{nullptr};
     QWidget* pathRowWidget{nullptr};
     QWidget* topRowWidget{nullptr};
-    QComboBox* modelCombo{nullptr};
+    EraComboBox* modelCombo{nullptr};
     QLabel* pathLabel{nullptr};
-    QPushButton* chooseBtn{nullptr};
-    QPushButton* openBtn{nullptr};
-    QPushButton* resetDirBtn{nullptr};
-    QComboBox* themeCombo{nullptr};
-    QComboBox* languageCombo{nullptr};
-    QPushButton* resetBtn{nullptr};
+    EraButton* chooseBtn{nullptr};
+    EraButton* openBtn{nullptr};
+    EraButton* resetDirBtn{nullptr};
+    EraComboBox* themeCombo{nullptr};
+    EraComboBox* languageCombo{nullptr};
+    EraButton* resetBtn{nullptr};
 
     QWidget* modelTab{nullptr};
     QLabel* modelNameTitle{nullptr};
     QLabel* watermarkTitle{nullptr};
     QLabel* curModelName{nullptr};
-    QPushButton* openModelDirBtn{nullptr};
-    QCheckBox* chkBlink{nullptr};
-    QCheckBox* chkBreath{nullptr};
-    QCheckBox* chkGaze{nullptr};
-    QCheckBox* chkPhysics{nullptr};
+    EraButton* openModelDirBtn{nullptr};
+    EraSwitch* chkBlink{nullptr};
+    EraSwitch* chkBreath{nullptr};
+    EraSwitch* chkGaze{nullptr};
+    EraSwitch* chkPhysics{nullptr};
     QLabel* tipBreath{nullptr};
     QLabel* tipBlink{nullptr};
     QLabel* tipGaze{nullptr};
     QLabel* tipPhysics{nullptr};
 
     QLabel* wmFileLabel{nullptr};
-    QPushButton* wmChooseBtn{nullptr};
-    QPushButton* wmClearBtn{nullptr};
+    EraButton* wmChooseBtn{nullptr};
+    EraButton* wmClearBtn{nullptr};
 
     // AI tab
     QWidget* aiTab{nullptr};
     QFormLayout* aiForm{nullptr};
-    QLineEdit* aiBaseUrl{nullptr};
-    QLineEdit* aiKey{nullptr};
-    QLineEdit* aiModel{nullptr};
-    QPlainTextEdit* aiSystemPrompt{nullptr};
-    QCheckBox* aiStream{nullptr};
+    EraLineEdit* aiBaseUrl{nullptr};
+    EraLineEdit* aiKey{nullptr};
+    EraLineEdit* aiModel{nullptr};
+    EraPlainTextEdit* aiSystemPrompt{nullptr};
+    EraSwitch* aiStream{nullptr};
     QWidget* aiBaseUrlRow{nullptr};
     QWidget* aiKeyRow{nullptr};
     QWidget* aiModelRow{nullptr};
@@ -121,22 +130,22 @@ public:
     QLabel* tipTtsVoice{nullptr};
 
     // TTS
-    QLineEdit* ttsBaseUrl{nullptr};
-    QLineEdit* ttsKey{nullptr};
-    QLineEdit* ttsModel{nullptr};
-    QLineEdit* ttsVoice{nullptr};
+    EraLineEdit* ttsBaseUrl{nullptr};
+    EraLineEdit* ttsKey{nullptr};
+    EraLineEdit* ttsModel{nullptr};
+    EraLineEdit* ttsVoice{nullptr};
 
     QWidget* advancedTab{nullptr};
     QFormLayout* advancedForm{nullptr};
     QWidget* cleanupRowWidget{nullptr};
-    QPushButton* clearCacheBtn{nullptr};
-    QPushButton* clearChatsBtn{nullptr};
-    QComboBox* texCapCombo{nullptr};
-    QComboBox* msaaCombo{nullptr};
+    EraButton* clearCacheBtn{nullptr};
+    EraButton* clearChatsBtn{nullptr};
+    EraComboBox* texCapCombo{nullptr};
+    EraComboBox* msaaCombo{nullptr};
 
     // Advanced: new combos
-    QComboBox* screenCombo{nullptr};
-    QComboBox* audioOutCombo{nullptr};
+    EraComboBox* screenCombo{nullptr};
+    EraComboBox* audioOutCombo{nullptr};
 
     QFileSystemWatcher* fsw{nullptr};
     QTimer* debounce{nullptr};
@@ -165,11 +174,18 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
 
     auto rootLay = new QVBoxLayout(d->central);
     rootLay->setContentsMargins(12,12,12,12);
-    d->tabs = new QTabWidget(d->central);
+    d->tabs = new EraTabBar(d->central);
+    d->tabStack = new QStackedWidget(d->central);
     rootLay->addWidget(d->tabs);
+    rootLay->addWidget(d->tabStack, 1);
+    connect(d->tabs, &EraTabBar::currentChanged, this, [this](int index){
+        d->tabStack->setCurrentIndex(index);
+        if (auto* fw = QApplication::focusWidget()) fw->clearFocus();
+        d->tabs->setFocus(Qt::OtherFocusReason);
+    });
 
     // Basic tab
-    d->basic = new QWidget(d->tabs);
+    d->basic = new QWidget(d->tabStack);
     auto form = new QFormLayout(d->basic);
     d->basicForm = form;
 
@@ -178,9 +194,12 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     d->pathRowWidget = pathRow;
     auto hl = new QHBoxLayout(pathRow); hl->setContentsMargins(0,0,0,0);
     d->pathLabel = new QLabel(SettingsManager::instance().modelsRoot(), pathRow);
-    d->chooseBtn = new QPushButton(tr("选择路径"), pathRow);
-    d->openBtn   = new QPushButton(tr("打开路径"), pathRow);
-    d->resetDirBtn = new QPushButton(tr("恢复默认"), pathRow);
+    d->chooseBtn = new EraButton(tr("选择路径"), pathRow);
+    d->chooseBtn->setTone(EraButton::Tone::Link);
+    d->openBtn   = new EraButton(tr("打开路径"), pathRow);
+    d->openBtn->setTone(EraButton::Tone::Link);
+    d->resetDirBtn = new EraButton(tr("恢复默认"), pathRow);
+    d->resetDirBtn->setTone(EraButton::Tone::Neutral);
     hl->addWidget(d->pathLabel, 1);
     hl->addWidget(d->chooseBtn);
     hl->addWidget(d->openBtn);
@@ -188,8 +207,9 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     form->addRow(tr("模型路径："), pathRow);
 
     // Current model row
-    d->modelCombo = new QComboBox(d->basic);
-    d->resetBtn = new QPushButton(tr("还原初始状态"), d->basic);
+    d->modelCombo = new EraComboBox(d->basic);
+    d->resetBtn = new EraButton(tr("还原初始状态"), d->basic);
+    d->resetBtn->setTone(EraButton::Tone::Danger);
     auto topRow = new QWidget(d->basic);
     d->topRowWidget = topRow;
     auto topLay = new QHBoxLayout(topRow); topLay->setContentsMargins(0,0,0,0);
@@ -198,13 +218,13 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     form->addRow(tr("当前模型："), topRow);
 
     // Theme
-    d->themeCombo = new QComboBox(d->basic);
+    d->themeCombo = new EraComboBox(d->basic);
     // 仅保留“跟随系统”，不再手动切换亮/暗，也不在代码里控制 palette
     d->themeCombo->addItems({tr("跟随系统")});
     d->themeCombo->setEnabled(false);
     form->addRow(tr("当前主题："), d->themeCombo);
 
-    d->languageCombo = new QComboBox(d->basic);
+    d->languageCombo = new EraComboBox(d->basic);
     d->languageCombo->addItem(tr("跟随系统"), QStringLiteral("system"));
     d->languageCombo->addItem(tr("简体中文"), QStringLiteral("zh_CN"));
     d->languageCombo->addItem(QStringLiteral("English"), QStringLiteral("en_US"));
@@ -221,14 +241,16 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     }
     form->addRow(tr("当前语言："), d->languageCombo);
 
-    d->tabs->addTab(d->basic, tr("基本设置"));
+    d->tabStack->addWidget(d->basic);
+    d->tabs->addTab(tr("基本设置"));
 
     // Model settings tab
-    d->modelTab = new QWidget(d->tabs);
+    d->modelTab = new QWidget(d->tabStack);
     auto vbox = new QVBoxLayout(d->modelTab);
     auto row1 = new QHBoxLayout(); row1->setSpacing(6); row1->setContentsMargins(0,0,0,0);
     d->curModelName = new QLabel("", d->modelTab);
-    d->openModelDirBtn = new QPushButton(tr("打开当前模型路径"), d->modelTab);
+    d->openModelDirBtn = new EraButton(tr("打开当前模型路径"), d->modelTab);
+    d->openModelDirBtn->setTone(EraButton::Tone::Link);
     d->modelNameTitle = new QLabel(tr("模型名称："), d->modelTab);
     row1->addWidget(d->modelNameTitle);
     row1->addWidget(d->curModelName, 1);
@@ -240,27 +262,29 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     wmRow->addWidget(d->watermarkTitle);
     d->wmFileLabel = new QLabel(tr("无"), d->modelTab);
     d->wmFileLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    d->wmChooseBtn = new QPushButton(tr("选择文件"), d->modelTab);
-    d->wmClearBtn  = new QPushButton(tr("取消所选"), d->modelTab);
+    d->wmChooseBtn = new EraButton(tr("选择文件"), d->modelTab);
+    d->wmChooseBtn->setTone(EraButton::Tone::Link);
+    d->wmClearBtn  = new EraButton(tr("取消所选"), d->modelTab);
+    d->wmClearBtn->setTone(EraButton::Tone::Neutral);
     wmRow->addWidget(d->wmFileLabel, 1);
     wmRow->addWidget(d->wmChooseBtn);
     wmRow->addWidget(d->wmClearBtn);
     vbox->addLayout(wmRow);
 
-    d->chkBreath  = new QCheckBox(tr("自动呼吸"), d->modelTab);
-    d->chkBlink   = new QCheckBox(tr("自动眨眼"), d->modelTab);
-    d->chkGaze    = new QCheckBox(tr("视线跟踪"), d->modelTab);
-    d->chkPhysics = new QCheckBox(tr("物理模拟"), d->modelTab);
+    d->chkBreath  = new EraSwitch(tr("自动呼吸"), d->modelTab);
+    d->chkBlink   = new EraSwitch(tr("自动眨眼"), d->modelTab);
+    d->chkGaze    = new EraSwitch(tr("视线跟踪"), d->modelTab);
+    d->chkPhysics = new EraSwitch(tr("物理模拟"), d->modelTab);
 
     d->chkBreath->setChecked(SettingsManager::instance().enableBreath());
     d->chkBlink->setChecked(SettingsManager::instance().enableBlink());
     d->chkGaze->setChecked(SettingsManager::instance().enableGaze());
     d->chkPhysics->setChecked(SettingsManager::instance().enablePhysics());
 
-    auto mkInlineTipRow = [this](QCheckBox* chk, const QString& tip, QLabel** outTip){
+    auto mkInlineTipRow = [this](EraSwitch* chk, const QString& tip, QLabel** outTip){
         QWidget* row = new QWidget(d->modelTab);
         auto lay = new QHBoxLayout(row);
-        lay->setContentsMargins(0,0,0,0); lay->setSpacing(2);
+        lay->setContentsMargins(0,0,0,0); lay->setSpacing(4);
         chk->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
         lay->addWidget(chk);
         lay->addWidget(new QLabel(" ", row));
@@ -278,22 +302,26 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     vbox->addWidget(mkInlineTipRow(d->chkGaze,    tr("眼球、头部与身体随鼠标方向轻微转动，远距离时幅度会衰减。默认关闭；开启后将屏蔽自动呼吸对头部的影响。关闭后恢复眼球微动策略。"), &d->tipGaze));
     vbox->addWidget(mkInlineTipRow(d->chkPhysics, tr("根据模型 physics3.json 的配置驱动物理（如头发/衣物摆动）。关闭后复位受影响参数。"), &d->tipPhysics));
     vbox->addStretch(1);
-    d->tabs->addTab(d->modelTab, tr("模型设置"));
+    d->tabStack->addWidget(d->modelTab);
+    d->tabs->addTab(tr("模型设置"));
 
     // ---- AI tab ----
-    d->aiTab = new QWidget(d->tabs);
+    d->aiTab = new QWidget(d->tabStack);
     {
         auto lay = new QVBoxLayout(d->aiTab);
         auto form2 = new QFormLayout();
         d->aiForm = form2;
 
-        d->aiBaseUrl = new QLineEdit(SettingsManager::instance().aiBaseUrl(), d->aiTab);
-        d->aiKey = new QLineEdit(SettingsManager::instance().aiApiKey(), d->aiTab);
+        d->aiBaseUrl = new EraLineEdit(SettingsManager::instance().aiBaseUrl(), d->aiTab);
+        d->aiBaseUrl->setFixedHeight(26);
+        d->aiKey = new EraLineEdit(SettingsManager::instance().aiApiKey(), d->aiTab);
+        d->aiKey->setFixedHeight(26);
         d->aiKey->setEchoMode(QLineEdit::Password);
-        d->aiModel = new QLineEdit(SettingsManager::instance().aiModel(), d->aiTab);
-        d->aiSystemPrompt = new QPlainTextEdit(SettingsManager::instance().aiSystemPrompt(), d->aiTab);
+        d->aiModel = new EraLineEdit(SettingsManager::instance().aiModel(), d->aiTab);
+        d->aiModel->setFixedHeight(26);
+        d->aiSystemPrompt = new EraPlainTextEdit(SettingsManager::instance().aiSystemPrompt(), d->aiTab);
         d->aiSystemPrompt->setPlaceholderText(tr("支持变量：$name$（当前模型名）"));
-        d->aiStream = new QCheckBox(tr("是否流式输出"), d->aiTab);
+        d->aiStream = new EraSwitch(tr("是否流式输出"), d->aiTab);
         d->aiStream->setChecked(SettingsManager::instance().aiStreamEnabled());
 
         // AI/TTS tooltip helper (same symbol style as 模型设置)
@@ -399,11 +427,15 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         }
 
         // TTS fields
-        d->ttsBaseUrl = new QLineEdit(SettingsManager::instance().ttsBaseUrl(), d->aiTab);
-        d->ttsKey = new QLineEdit(SettingsManager::instance().ttsApiKey(), d->aiTab);
+        d->ttsBaseUrl = new EraLineEdit(SettingsManager::instance().ttsBaseUrl(), d->aiTab);
+        d->ttsBaseUrl->setFixedHeight(26);
+        d->ttsKey = new EraLineEdit(SettingsManager::instance().ttsApiKey(), d->aiTab);
+        d->ttsKey->setFixedHeight(26);
         d->ttsKey->setEchoMode(QLineEdit::Password);
-        d->ttsModel = new QLineEdit(SettingsManager::instance().ttsModel(), d->aiTab);
-        d->ttsVoice = new QLineEdit(SettingsManager::instance().ttsVoice(), d->aiTab);
+        d->ttsModel = new EraLineEdit(SettingsManager::instance().ttsModel(), d->aiTab);
+        d->ttsModel->setFixedHeight(26);
+        d->ttsVoice = new EraLineEdit(SettingsManager::instance().ttsVoice(), d->aiTab);
+        d->ttsVoice->setFixedHeight(26);
 
         mkRowWithInfo(
             tr("语音API："),
@@ -460,26 +492,27 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         connect(d->aiKey, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setAiApiKey(t); });
         connect(d->aiModel, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setAiModel(t); });
         connect(d->aiSystemPrompt, &QPlainTextEdit::textChanged, this, [this]{ SettingsManager::instance().setAiSystemPrompt(d->aiSystemPrompt->toPlainText()); });
-        connect(d->aiStream, &QCheckBox::toggled, this, [](bool on){ SettingsManager::instance().setAiStreamEnabled(on); });
+        connect(d->aiStream, &EraSwitch::toggled, this, [](bool on){ SettingsManager::instance().setAiStreamEnabled(on); });
 
         connect(d->ttsBaseUrl, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsBaseUrl(t); });
         connect(d->ttsKey, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsApiKey(t); });
         connect(d->ttsModel, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsModel(t); });
         connect(d->ttsVoice, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsVoice(t); });
     }
-    d->tabs->insertTab(2, d->aiTab, tr("AI设置"));
+    d->tabStack->addWidget(d->aiTab);
+    d->tabs->addTab(tr("AI设置"));
 
     // Advanced tab
-    d->advancedTab = new QWidget(d->tabs);
+    d->advancedTab = new QWidget(d->tabStack);
     auto advLay = new QFormLayout(d->advancedTab);
     d->advancedForm = advLay;
-    d->texCapCombo = new QComboBox(d->advancedTab); d->texCapCombo->addItems({"4096","3072","2048","1024"});
+    d->texCapCombo = new EraComboBox(d->advancedTab); d->texCapCombo->addItems({"4096","3072","2048","1024"});
     {
         int cur = SettingsManager::instance().textureMaxDim();
         int idx = d->texCapCombo->findText(QString::number(cur)); if (idx<0) idx = 2; d->texCapCombo->setCurrentIndex(idx);
     }
     advLay->addRow(tr("贴图上限："), d->texCapCombo);
-    d->msaaCombo = new QComboBox(d->advancedTab); d->msaaCombo->addItems({"2x","4x","8x"});
+    d->msaaCombo = new EraComboBox(d->advancedTab); d->msaaCombo->addItems({"2x","4x","8x"});
     {
         int cur = SettingsManager::instance().msaaSamples();
         int idx = (cur==2?0:(cur==8?2:1)); d->msaaCombo->setCurrentIndex(idx);
@@ -487,7 +520,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     advLay->addRow(tr("MSAA："), d->msaaCombo);
 
     // ---- Model display screen ----
-    d->screenCombo = new QComboBox(d->advancedTab);
+    d->screenCombo = new EraComboBox(d->advancedTab);
     d->screenCombo->addItem(tr("系统默认（默认）"), QString());
     {
         const QString preferred = SettingsManager::instance().preferredScreenName();
@@ -515,7 +548,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     advLay->addRow(tr("模型显示："), d->screenCombo);
 
     // ---- Audio output device ----
-    d->audioOutCombo = new QComboBox(d->advancedTab);
+    d->audioOutCombo = new EraComboBox(d->advancedTab);
     d->audioOutCombo->addItem(tr("系统默认（默认）"), QString());
     {
         const QString preferredB64 = SettingsManager::instance().preferredAudioOutputIdBase64();
@@ -547,8 +580,10 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     d->cleanupRowWidget = cleanupRow;
     auto cleanupLay = new QHBoxLayout(cleanupRow);
     cleanupLay->setContentsMargins(0, 0, 0, 0);
-    auto btnClearCache = new QPushButton(tr("清除缓存"), cleanupRow);
-    auto btnClearChats = new QPushButton(tr("清除所有对话历史"), cleanupRow);
+    auto btnClearCache = new EraButton(tr("清除缓存"), cleanupRow);
+    btnClearCache->setTone(EraButton::Tone::Warning);
+    auto btnClearChats = new EraButton(tr("清除所有对话历史"), cleanupRow);
+    btnClearChats->setTone(EraButton::Tone::Danger);
     d->clearCacheBtn = btnClearCache;
     d->clearChatsBtn = btnClearChats;
     cleanupLay->addWidget(d->clearCacheBtn);
@@ -557,7 +592,8 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     advLay->addRow(tr("清理："), cleanupRow);
 
     advLay->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
-    d->tabs->addTab(d->advancedTab, tr("高级设置"));
+    d->tabStack->addWidget(d->advancedTab);
+    d->tabs->addTab(tr("高级设置"));
 
     auto confirm = [this](const QString& title, const QString& text) -> bool {
         auto ret = QMessageBox::question(this, title, text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
@@ -628,13 +664,16 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
 
     // Connections
     connect(d->modelCombo, &QComboBox::currentTextChanged, this, [this](const QString& name){
+        if (name.isEmpty()) return;
         auto& sm = SettingsManager::instance();
+        if (sm.selectedModelFolder() == name) return;
         sm.setSelectedModelFolder(name);
         sm.ensureModelConfigExists(name);
         for (const auto& e : sm.scanModels())
         {
             if (e.folderName == name)
             {
+                qDebug() << "[ModelFlow][SettingsWindow] emit requestLoadModel" << "name=" << name << "json=" << e.jsonPath;
                 emit requestLoadModel(e.jsonPath);
                 break;
             }
@@ -695,10 +734,10 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     connect(d->openModelDirBtn, &QPushButton::clicked, this, [this]{ QString folder = SettingsManager::instance().selectedModelFolder(); QString root = SettingsManager::instance().modelsRoot(); if (folder.isEmpty()) { auto entries = SettingsManager::instance().scanModels(); if (!entries.isEmpty()) folder = entries.front().folderName; } if (!folder.isEmpty()) QDesktopServices::openUrl(QUrl::fromLocalFile(QDir(root).filePath(folder))); });
     connect(d->modelCombo, &QComboBox::currentTextChanged, this, [refreshCurModelName](const QString&){ refreshCurModelName(); });
 
-    connect(d->chkBlink, &QCheckBox::toggled, this, [this](bool on){ SettingsManager::instance().setEnableBlink(on); emit toggleBlink(on); });
-    connect(d->chkBreath, &QCheckBox::toggled, this, [this](bool on){ SettingsManager::instance().setEnableBreath(on); emit toggleBreath(on); });
-    connect(d->chkGaze, &QCheckBox::toggled, this, [this](bool on){ SettingsManager::instance().setEnableGaze(on); emit toggleGaze(on); });
-    connect(d->chkPhysics, &QCheckBox::toggled, this, [this](bool on){ SettingsManager::instance().setEnablePhysics(on); emit togglePhysics(on); });
+    connect(d->chkBlink, &EraSwitch::toggled, this, [this](bool on){ SettingsManager::instance().setEnableBlink(on); emit toggleBlink(on); });
+    connect(d->chkBreath, &EraSwitch::toggled, this, [this](bool on){ SettingsManager::instance().setEnableBreath(on); emit toggleBreath(on); });
+    connect(d->chkGaze, &EraSwitch::toggled, this, [this](bool on){ SettingsManager::instance().setEnableGaze(on); emit toggleGaze(on); });
+    connect(d->chkPhysics, &EraSwitch::toggled, this, [this](bool on){ SettingsManager::instance().setEnablePhysics(on); emit togglePhysics(on); });
 
     connect(d->wmChooseBtn, &QPushButton::clicked, this, [this, chooseOpenFile]{ QString folder = SettingsManager::instance().selectedModelFolder(); if (folder.isEmpty()) return; QString root = SettingsManager::instance().modelsRoot(); QString modelDir = QDir(root).filePath(folder); QString path = chooseOpenFile(tr("选择水印表达式文件"), modelDir, "Expression (*.exp3.json)"); if (path.isEmpty()) return; SettingsManager::instance().setWatermarkExpPath(path); d->wmFileLabel->setText(QFileInfo(path).fileName()); emit watermarkChanged(path); });
     connect(d->wmClearBtn, &QPushButton::clicked, this, [this]{ SettingsManager::instance().setWatermarkExpPath(""); d->wmFileLabel->setText(tr("无")); emit watermarkChanged(""); });
@@ -753,7 +792,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         SettingsManager::instance().setAiSystemPrompt(d->aiSystemPrompt->toPlainText());
         emitAiChanged();
     });
-    connect(d->aiStream, &QCheckBox::toggled, this, [this, emitAiChanged](bool on){
+    connect(d->aiStream, &EraSwitch::toggled, this, [this, emitAiChanged](bool on){
         SettingsManager::instance().setAiStreamEnabled(on);
         emitAiChanged();
     });
@@ -943,6 +982,7 @@ static void addWatchDirIfExists(QFileSystemWatcher* fsw, const QString& path) {
 
 void SettingsWindow::refreshModelList() {
     auto models = SettingsManager::instance().scanModels();
+    const QSignalBlocker blocker(d->modelCombo);
     d->modelCombo->clear();
     QString sel = SettingsManager::instance().selectedModelFolder();
     int cur = -1; int i=0;

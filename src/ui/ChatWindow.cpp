@@ -19,6 +19,9 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include "ui/era-style/EraButton.hpp"
+#include "ui/era-style/EraTextEdit.hpp"
+#include "ui/era-style/EraStyleColor.hpp"
 #include <QScrollBar>
 #include <QTextBrowser>
 #include <QTextBlock>
@@ -29,29 +32,6 @@
 #include <QPlainTextEdit>
 
 namespace {
-
-class ChatInputEdit final : public QTextEdit
-{
-    Q_OBJECT
-public:
-    using QTextEdit::QTextEdit;
-
-signals:
-    void sendRequested();
-
-protected:
-    void keyPressEvent(QKeyEvent* e) override
-    {
-        // Enter = send, Shift+Enter = newline
-        if ((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) && !(e->modifiers() & Qt::ShiftModifier))
-        {
-            e->accept();
-            emit sendRequested();
-            return;
-        }
-        QTextEdit::keyPressEvent(e);
-    }
-};
 
 QPixmap circleAvatar(const QPixmap& src, int logicalSize, qreal devicePixelRatio)
 {
@@ -120,13 +100,18 @@ public:
     {
         auto lay = new QHBoxLayout(this);
         lay->setContentsMargins(10, 8, 10, 8);
-        lay->setSpacing(8);
+        lay->setSpacing(10);
 
         m_avatar = new QLabel(this);
         m_avatar->setFixedSize(32, 32);
         setAvatar(avatar);
 
-        m_text = new QTextBrowser(this);
+        m_bubbleBox = new QWidget(this);
+        auto* bubbleLay = new QVBoxLayout(m_bubbleBox);
+        bubbleLay->setContentsMargins(12, 8, 12, 8);
+        bubbleLay->setSpacing(0);
+
+        m_text = new QTextBrowser(m_bubbleBox);
         m_text->setText(text);
         m_text->setOpenExternalLinks(true);
         m_text->setFrameShape(QFrame::NoFrame);
@@ -135,28 +120,25 @@ public:
         m_text->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
         m_text->setContextMenuPolicy(Qt::DefaultContextMenu);
         m_text->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
-        m_text->setStyleSheet(QStringLiteral(
-            "QTextBrowser{background:transparent; padding:0px; margin:0px; border:none;}"));
-        // Wrap only when reaching the max width (or explicit newlines), not earlier.
-        // This avoids CJK text wrapping too aggressively when the bubble is still expanding.
+        m_text->document()->setDocumentMargin(0.0);
+        m_text->setContentsMargins(0, 0, 0, 0);
+        updateBubbleTextStyle();
         m_text->setWordWrapMode(QTextOption::WordWrap);
-
-        // Always keep internal scrollbars disabled; bubble grows with content.
         m_text->setLineWrapMode(QTextEdit::WidgetWidth);
-
-        // Ensure the bubble never needs internal scrolling: we resize the QTextBrowser height to fit the document.
         m_text->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        bubbleLay->addWidget(m_text);
+        m_bubbleBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
         if (m_isUser)
         {
             lay->addStretch(1);
-            lay->addWidget(m_text, 0, Qt::AlignRight | Qt::AlignTop);
+            lay->addWidget(m_bubbleBox, 0, Qt::AlignRight | Qt::AlignTop);
             lay->addWidget(m_avatar, 0, Qt::AlignRight | Qt::AlignTop);
         }
         else
         {
             lay->addWidget(m_avatar, 0, Qt::AlignLeft | Qt::AlignTop);
-            lay->addWidget(m_text, 0, Qt::AlignLeft | Qt::AlignTop);
+            lay->addWidget(m_bubbleBox, 0, Qt::AlignLeft | Qt::AlignTop);
             lay->addStretch(1);
         }
 
@@ -172,11 +154,26 @@ public:
         m_avatar->setPixmap(circleAvatar(avatar, 32, dpr));
     }
 
+    void updateBubbleTextStyle()
+    {
+        const QColor text = m_isUser ? EraStyleColor::MainText : EraStyleColor::BasicWhite;
+        m_text->setStyleSheet(QStringLiteral(
+            "QTextBrowser{"
+            "background:transparent; padding:0px; margin:0px; border:none; color:%1; }"
+            "QTextBrowser > QWidget { margin:0px; padding:0px; background:transparent; }"
+        ).arg(text.name(QColor::HexRgb)));
+    }
+
     void setMaxBubbleWidth(int w)
     {
-        // This is the OUTER width we allow for the text area (excluding our paint padding).
         m_maxBubbleWidth = qMax(1, w);
         syncTextSizeToContent();
+        updateGeometry();
+    }
+
+    void setRowWidth(int w)
+    {
+        m_rowWidth = qMax(1, w);
         updateGeometry();
     }
 
@@ -185,6 +182,7 @@ public:
         m_text->moveCursor(QTextCursor::End);
         m_text->insertPlainText(t);
         m_text->moveCursor(QTextCursor::End);
+        updateBubbleTextStyle();
         syncTextSizeToContent();
         updateGeometry();
         update();
@@ -193,6 +191,7 @@ public:
     void setContent(const QString& c)
     {
         m_text->setText(c);
+        updateBubbleTextStyle();
         syncTextSizeToContent();
         updateGeometry();
         update();
@@ -206,10 +205,10 @@ public:
     QSize sizeHint() const override
     {
         // Height = max(avatar, text bubble) + paddings.
-        const int padV = 16; // bubbleRect adds +-8
-        const int contentH = m_text ? m_text->height() : 0;
-        const int h = qMax(32, contentH) + padV;
-        return { QWidget::sizeHint().width(), h };
+        const int rowTopBottom = 16;
+        const int bubbleH = m_bubbleBox ? m_bubbleBox->height() : 0;
+        const int h = qMax(32, bubbleH) + rowTopBottom;
+        return { m_rowWidth, h };
     }
 
 protected:
@@ -217,13 +216,7 @@ protected:
     {
         QWidget::paintEvent(ev);
 
-        // Bubble is always derived from the text widget rectangle + fixed padding.
-        // Avatar spacing must be handled by layout (margins/spacing), not by bubble math.
-        const int bubblePadH = 12;
-        const int bubblePadV = 8;
-
-        const QRect textRect = m_text ? m_text->geometry() : QRect();
-        QRect bubbleRect = textRect.adjusted(-bubblePadH, -bubblePadV, bubblePadH, bubblePadV);
+        QRect bubbleRect = m_bubbleBox ? m_bubbleBox->geometry() : QRect();
 
         // Clamp bubble to our content area so it never overlaps layout margins.
         const QMargins cm = contentsMargins();
@@ -233,42 +226,20 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
 
-        const QPalette pal = palette();
-
-        // User bubble uses system highlight color; assistant bubble should stand out from background.
-        const QColor baseBg = pal.color(QPalette::Base);
-        const QColor windowBg = pal.color(QPalette::Window);
-
         QColor bg;
-        if (m_isUser)
-        {
-            bg = pal.color(QPalette::Highlight);
-        }
-        else
-        {
-            bg = QColor::fromRgbF(
-                (baseBg.redF() * 0.55 + windowBg.redF() * 0.45),
-                (baseBg.greenF() * 0.55 + windowBg.greenF() * 0.45),
-                (baseBg.blueF() * 0.55 + windowBg.blueF() * 0.45),
-                1.0);
-
-            const bool dark = (windowBg.lightnessF() < 0.5);
-            bg = dark ? bg.lighter(115) : bg.darker(103);
-        }
-
         QColor border;
         if (m_isUser)
         {
-            border = bg.darker(130);
+            bg = EraStyleColor::BasicWhite;
+            border = EraStyleColor::PrimaryBorder;
         }
         else
         {
-            border = pal.color(QPalette::Mid);
-            const bool dark = (windowBg.lightnessF() < 0.5);
-            border = dark ? border.lighter(135) : border.darker(125);
+            bg = EraStyleColor::Link;
+            border = EraStyleColor::LinkClick;
         }
 
-        p.setPen(QPen(border, 1));
+        p.setPen(QPen(border, 1.0));
         p.setBrush(bg);
         p.drawRoundedRect(bubbleRect, 14, 14);
     }
@@ -332,14 +303,21 @@ private:
 
         m_text->setFixedWidth(finalW);
         m_text->setFixedHeight(textH);
+        if (m_bubbleBox)
+        {
+            m_bubbleBox->setFixedSize(finalW + 24, textH + 16);
+            m_bubbleBox->updateGeometry();
+        }
 
         m_text->updateGeometry();
     }
 
     bool m_isUser{false};
     QLabel* m_avatar{nullptr};
+    QWidget* m_bubbleBox{nullptr};
     QTextBrowser* m_text{nullptr};
     int m_maxBubbleWidth{360};
+    int m_rowWidth{520};
 };
 
 } // namespace
@@ -350,9 +328,9 @@ public:
     QString modelDir;
 
     QListWidget* list{nullptr};
-    ChatInputEdit* input{nullptr};
-    QPushButton* sendBtn{nullptr};
-    QPushButton* clearBtn{nullptr};
+    EraTextEdit* input{nullptr};
+    EraButton* sendBtn{nullptr};
+    EraButton* clearBtn{nullptr};
 
     QPixmap userAvatar;
     QPixmap aiAvatar;
@@ -376,12 +354,16 @@ public:
         }, Qt::QueuedConnection);
     }
 
+    int viewportRowWidth() const
+    {
+        const int vw = (list && list->viewport()) ? list->viewport()->width() : 520;
+        return qMax(1, vw - 20);
+    }
+
     int computeBubbleMaxWidth() const
     {
-        // Bubble max width is 3/4 of the message list viewport.
-        const int vw = (list && list->viewport()) ? list->viewport()->width() : 520;
-        // subtract a little safety padding for list margins + layout spacing
-        const int safe = qMax(0, vw - 24);
+        const int vw = viewportRowWidth();
+        const int safe = qMax(0, vw - 32);
         const int max = int(safe * 0.75);
         return qMax(1, max);
     }
@@ -397,7 +379,9 @@ public:
             if (auto* w = qobject_cast<ChatMessageWidget*>(list->itemWidget(item)))
             {
                 w->setMaxBubbleWidth(maxW);
-                item->setSizeHint(w->sizeHint());
+                w->setRowWidth(viewportRowWidth());
+                const QSize hint = w->sizeHint();
+                item->setSizeHint(QSize(viewportRowWidth(), hint.height()));
             }
         }
         forceListRelayout();
@@ -431,8 +415,10 @@ public:
 
             auto* bubble = new ChatMessageWidget(isUser ? userAvatar : aiAvatar, content, isUser);
             bubble->setMaxBubbleWidth(maxW);
+            bubble->setRowWidth(viewportRowWidth());
 
-            item->setSizeHint(bubble->sizeHint());
+            const QSize hint = bubble->sizeHint();
+            item->setSizeHint(QSize(viewportRowWidth(), hint.height()));
             list->addItem(item);
             list->setItemWidget(item, bubble);
         }
@@ -522,6 +508,7 @@ ChatWindow::ChatWindow(QWidget* parent)
     d->list->setUniformItemSizes(false);
     d->list->setSelectionMode(QAbstractItemView::NoSelection);
     d->list->setFocusPolicy(Qt::NoFocus);
+    d->list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     root->addWidget(d->list, 1);
 
     auto* bottom = new QWidget(central);
@@ -529,17 +516,19 @@ ChatWindow::ChatWindow(QWidget* parent)
     bl->setContentsMargins(0, 0, 0, 0);
     bl->setSpacing(8);
 
-    d->input = new ChatInputEdit(bottom);
+    d->input = new EraTextEdit(bottom);
     d->input->setPlaceholderText(tr("输入消息... (Enter 发送 / Shift+Enter 换行)"));
     d->input->setAcceptRichText(false);
     d->input->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     d->input->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     d->input->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    d->input->setMinimumHeight(36);
+    d->input->setMinimumHeight(32);
     d->input->setMaximumHeight(120);
 
-    d->sendBtn = new QPushButton(tr("发送"), bottom);
-    d->clearBtn = new QPushButton(tr("清除"), bottom);
+    d->sendBtn = new EraButton(tr("发送"), bottom);
+    d->sendBtn->setTone(EraButton::Tone::Link);
+    d->clearBtn = new EraButton(tr("清除"), bottom);
+    d->clearBtn->setTone(EraButton::Tone::Danger);
 
     bl->addWidget(d->input, 1);
     bl->addWidget(d->sendBtn);
@@ -583,12 +572,12 @@ ChatWindow::ChatWindow(QWidget* parent)
     };
 
     connect(d->sendBtn, &QPushButton::clicked, this, sendNow);
-    connect(d->input, &ChatInputEdit::sendRequested, this, sendNow);
+    connect(d->input, &EraTextEdit::sendRequested, this, sendNow);
 
     // Auto-grow the input box height with content up to maxHeight.
     connect(d->input->document(), &QTextDocument::contentsChanged, this, [this]{
         const int docH = int(std::ceil(d->input->document()->size().height()));
-        const int target = qBound(36, docH + 10, 120);
+        const int target = qBound(32, docH + 6, 120);
         d->input->setFixedHeight(target);
     });
 
@@ -678,7 +667,9 @@ void ChatWindow::appendAiMessageStart()
         auto* item = new QListWidgetItem(d->list);
         auto* w = new ChatMessageWidget(d->aiAvatar, QString(), /*isUser*/false, nullptr);
         w->setMaxBubbleWidth(d->computeBubbleMaxWidth());
-        item->setSizeHint(w->sizeHint());
+        w->setRowWidth(d->viewportRowWidth());
+        const QSize hint = w->sizeHint();
+        item->setSizeHint(QSize(d->viewportRowWidth(), hint.height()));
         d->list->addItem(item);
         d->list->setItemWidget(item, w);
         d->currentAiBubble = w;
@@ -705,7 +696,8 @@ void ChatWindow::appendAiToken(const QString& token)
         auto* item = d->list->item(d->list->count() - 1);
         if (item)
         {
-            item->setSizeHint(d->currentAiBubble->sizeHint());
+            const QSize hint = d->currentAiBubble->sizeHint();
+            item->setSizeHint(QSize(d->viewportRowWidth(), hint.height()));
         }
         d->scheduleRelayout(this);
         d->list->scrollToBottom();
@@ -772,7 +764,10 @@ void ChatWindow::setAiMessageContent(const QString& content)
         {
             auto* item = d->list->item(d->list->count() - 1);
             if (item)
-                item->setSizeHint(d->currentAiBubble->sizeHint());
+            {
+                const QSize hint = d->currentAiBubble->sizeHint();
+                item->setSizeHint(QSize(d->viewportRowWidth(), hint.height()));
+            }
 
             d->scheduleRelayout(this);
             d->list->scrollToBottom();
