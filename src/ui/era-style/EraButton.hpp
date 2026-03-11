@@ -29,6 +29,9 @@ public:
     void setTone(Tone tone);
     Tone tone() const { return m_tone; }
 
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+
 protected:
     void paintEvent(QPaintEvent* event) override;
     void enterEvent(QEnterEvent* event) override;

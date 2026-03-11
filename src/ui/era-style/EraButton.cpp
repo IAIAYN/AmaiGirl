@@ -93,6 +93,19 @@ void EraButton::mouseReleaseEvent(QMouseEvent* event)
     updateTargetState(true);
 }
 
+QSize EraButton::sizeHint() const
+{
+    const int textWidth = fontMetrics().horizontalAdvance(text());
+    const int w = textWidth + 24; // 左右各 12px padding
+    const int h = qMax(minimumHeight(), 32);
+    return QSize(w, h);
+}
+
+QSize EraButton::minimumSizeHint() const
+{
+    return sizeHint();
+}
+
 void EraButton::changeEvent(QEvent* event)
 {
     QPushButton::changeEvent(event);
