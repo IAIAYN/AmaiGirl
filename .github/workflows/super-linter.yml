@@ -10,7 +10,7 @@ on:
   push:
     branches: [ "main", "dev", "feat/**" ]
   pull_request:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "dev", "feat/**" ]
 
 permissions:
   contents: read
