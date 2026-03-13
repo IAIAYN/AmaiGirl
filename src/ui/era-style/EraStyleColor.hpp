@@ -1,9 +1,47 @@
 #pragma once
 
 #include <QColor>
+#include <QGuiApplication>
+#include <QStyleHints>
 
 namespace EraStyleColor
 {
+    // ---------- Dark-mode semantic colors ----------
+    // Surface / input background in dark mode
+    inline const QColor DarkSurface{0x1e, 0x1f, 0x20, 0xff};
+    // Slightly elevated surface (disabled, inactive)
+    inline const QColor DarkSurfaceSubtle{0x2a, 0x2b, 0x2d, 0xff};
+    // Popups / dropdown background
+    inline const QColor DarkPopup{0x28, 0x29, 0x2b, 0xff};
+    // Main text in dark mode
+    inline const QColor DarkMainText{0xe6, 0xe7, 0xe8, 0xff};
+    // Subordinate text in dark mode
+    inline const QColor DarkSubordinateText{0xb0, 0xb1, 0xb3, 0xff};
+    // Auxiliary / placeholder text in dark mode
+    inline const QColor DarkAuxiliaryText{0x74, 0x75, 0x78, 0xff};
+    // Disabled text in dark mode
+    inline const QColor DarkDisabledText{0x52, 0x53, 0x55, 0xff};
+    // Primary border in dark mode
+    inline const QColor DarkPrimaryBorder{0x3e, 0x3f, 0x42, 0xff};
+    // Secondary border / separator
+    inline const QColor DarkSecondaryBorder{0x31, 0x32, 0x35, 0xff};
+    // Tooltip background in dark mode
+    inline const QColor DarkTooltipBackground{0x3a, 0x3b, 0x3e, 0xff};
+    // Hover fill in dark mode
+    inline const QColor DarkHoverFill{0x35, 0x36, 0x3a, 0xff};
+
+    // ---------- Utility ----------
+    inline bool isDark()
+    {
+        if (!QGuiApplication::instance())
+            return false;
+        const QStyleHints* hints = QGuiApplication::styleHints();
+        if (!hints)
+            return false;
+        return hints->colorScheme() == Qt::ColorScheme::Dark;
+    }
+
+
     inline const QColor Link{0x32, 0x7d, 0xff, 0xff};
     inline const QColor LinkHover{0x59, 0x90, 0xff, 0xff};
     inline const QColor LinkClick{0x2a, 0x70, 0xd9, 0xff};

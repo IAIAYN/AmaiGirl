@@ -13,11 +13,19 @@ class EraTabBar : public QWidget
 {
     Q_OBJECT
 public:
+    enum class Orientation
+    {
+        Horizontal,
+        Vertical
+    };
+
     explicit EraTabBar(QWidget* parent = nullptr);
 
     void addTab(const QString& label);
     void setTabText(int index, const QString& label);
     void setCurrentIndex(int index);
+    void setOrientation(Orientation orientation);
+    Orientation orientation() const { return m_orientation; }
     int currentIndex() const { return m_currentIndex; }
     int count() const { return m_labels.size(); }
 
@@ -42,6 +50,7 @@ private:
     };
 
     void init();
+    void applyOrientationGeometry();
     TabGeom tabGeomAt(int index) const;
     int tabAtPos(int px) const;
     void animateIndicatorTo(int index);
@@ -59,4 +68,5 @@ private:
     QVariantAnimation* m_anim{nullptr};
     qreal m_animStartX{0.0};
     qreal m_animStartW{0.0};
+    Orientation m_orientation{Orientation::Horizontal};
 };

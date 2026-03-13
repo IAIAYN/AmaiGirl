@@ -20,6 +20,7 @@
 #include <QPainterPath>
 #include <QPushButton>
 #include "ui/era-style/EraButton.hpp"
+#include "ui/era-style/EraStyleHelper.hpp"
 #include "ui/era-style/EraTextEdit.hpp"
 #include "ui/era-style/EraStyleColor.hpp"
 #include <QScrollBar>
@@ -509,6 +510,7 @@ ChatWindow::ChatWindow(QWidget* parent)
     d->list->setSelectionMode(QAbstractItemView::NoSelection);
     d->list->setFocusPolicy(Qt::NoFocus);
     d->list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    EraStyle::installHoverScrollBars(d->list, true, false);
     root->addWidget(d->list, 1);
 
     auto* bottom = new QWidget(central);
@@ -519,7 +521,6 @@ ChatWindow::ChatWindow(QWidget* parent)
     d->input = new EraTextEdit(bottom);
     d->input->setPlaceholderText(tr("输入消息... (Enter 发送 / Shift+Enter 换行)"));
     d->input->setAcceptRichText(false);
-    d->input->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     d->input->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     d->input->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     d->input->setMinimumHeight(32);

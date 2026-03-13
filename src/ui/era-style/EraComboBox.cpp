@@ -1,16 +1,21 @@
 #include "ui/era-style/EraComboBox.hpp"
 #include "ui/era-style/EraStyleColor.hpp"
+#include "ui/era-style/EraStyleHelper.hpp"
 
 #include <QAbstractItemView>
+#include <QCoreApplication>
 #include <QFocusEvent>
+#include <QGuiApplication>
 #include <QLineEdit>
 #include <QListView>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPaintEvent>
-#include <QScrollBar>
+#include <QProxyStyle>
+#include <QStyleHints>
 #include <QStandardItemModel>
 #include <QStyledItemDelegate>
+#include <QTimer>
 #include <QVariantAnimation>
 #include <QEnterEvent>
 #include <algorithm>
@@ -24,6 +29,37 @@ constexpr int kArrowSize = 5;
 constexpr int kMinHeight = 26;
 constexpr int kAnimMs = 120;
 constexpr int kPopupItemHeight = 26;
+constexpr int kPopupMaxVisibleItems = 5;
+
+QString toRgba(const QColor& color)
+{
+    return QStringLiteral("rgba(%1, %2, %3, %4)")
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .arg(QString::number(color.alphaF(), 'f', 3));
+}
+
+class EraComboPopupStyle final : public QProxyStyle
+{
+public:
+    explicit EraComboPopupStyle(QStyle* baseStyle)
+        : QProxyStyle(baseStyle)
+    {
+    }
+
+    int styleHint(StyleHint hint,
+                  const QStyleOption* option,
+                  const QWidget* widget,
+                  QStyleHintReturn* returnData) const override
+    {
+        // Force QComboBox to use QListView popup instead of native menu popup on macOS,
+        // so maxVisibleItems/scroll behavior remains deterministic and themeable.
+        if (hint == QStyle::SH_ComboBox_Popup)
+            return 0;
+        return QProxyStyle::styleHint(hint, option, widget, returnData);
+    }
+};
 
 class EraComboItemDelegate : public QStyledItemDelegate
 {
@@ -76,8 +112,13 @@ void EraComboBox::paintEvent(QPaintEvent* event)
     QRectF rectF = rect();
     rectF.adjust(0.75, 0.75, -0.75, -0.75);
 
+    const bool dark = EraStyleColor::isDark();
+
     painter.setPen(Qt::NoPen);
-    painter.setBrush(isEnabled() ? EraStyleColor::BasicWhite : EraStyleColor::BasicGray);
+    if (!isEnabled())
+        painter.setBrush(dark ? EraStyleColor::DarkSurfaceSubtle : EraStyleColor::BasicGray);
+    else
+        painter.setBrush(dark ? EraStyleColor::DarkSurface : EraStyleColor::BasicWhite);
     painter.drawRoundedRect(rectF, kRadius, kRadius);
 
     painter.setPen(QPen(m_borderColor, kBorderWidth));
@@ -86,7 +127,13 @@ void EraComboBox::paintEvent(QPaintEvent* event)
 
     const bool hasCurrent = currentIndex() >= 0 && !currentText().isEmpty();
     const QString text = hasCurrent ? currentText() : placeholderText();
-    QColor textColor = !isEnabled() ? EraStyleColor::DisabledText : (hasCurrent ? EraStyleColor::MainText : EraStyleColor::DisabledText);
+    QColor textColor;
+    if (!isEnabled())
+        textColor = dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText;
+    else if (hasCurrent)
+        textColor = dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText;
+    else
+        textColor = dark ? EraStyleColor::DarkAuxiliaryText : EraStyleColor::AuxiliaryText;
     painter.setPen(textColor);
     painter.setFont(font());
 
@@ -109,7 +156,10 @@ void EraComboBox::paintEvent(QPaintEvent* event)
         arrowPath.lineTo(arrowCenterX + kArrowSize, arrowCenterY - 2);
     }
 
-    painter.setPen(QPen(isEnabled() ? EraStyleColor::AuxiliaryText : EraStyleColor::DisabledText, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    const QColor arrowColor = !isEnabled()
+        ? (dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText)
+        : (dark ? EraStyleColor::DarkSubordinateText : EraStyleColor::AuxiliaryText);
+    painter.setPen(QPen(arrowColor, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.drawPath(arrowPath);
 }
 
@@ -144,6 +194,18 @@ void EraComboBox::showPopup()
     refreshPopupStyle();
     if (view())
     {
+        const bool needScroll = count() > maxVisibleItems();
+        view()->setVerticalScrollBarPolicy(needScroll ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
+
+        int rowHeight = kPopupItemHeight;
+        if (count() > 0)
+            rowHeight = std::max(rowHeight, view()->sizeHintForRow(0));
+
+        const int visibleRows = std::clamp(count(), 1, maxVisibleItems());
+        const int popupHeight = visibleRows * rowHeight + 10;
+        view()->setMinimumHeight(popupHeight);
+        view()->setMaximumHeight(popupHeight);
+
         const int contentWidth = view()->sizeHintForColumn(0) + 40;
         view()->setMinimumWidth(std::max(width(), contentWidth));
     }
@@ -163,12 +225,18 @@ void EraComboBox::init()
     setEditable(false);
     setInsertPolicy(QComboBox::NoInsert);
     setIconSize(QSize(0, 0));
+    setMaxVisibleItems(kPopupMaxVisibleItems);
+
+    auto* popupStyle = new EraComboPopupStyle(style());
+    popupStyle->setParent(this);
+    setStyle(popupStyle);
 
     auto* listView = new QListView(this);
     listView->setItemDelegate(new EraComboItemDelegate(listView));
     listView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     listView->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     listView->setTextElideMode(Qt::ElideRight);
+    EraStyle::installHoverScrollBars(listView, true, false);
     setView(listView);
 
     setStyleSheet(QStringLiteral(
@@ -179,40 +247,7 @@ void EraComboBox::init()
 
     view()->setFrameShape(QFrame::NoFrame);
     view()->viewport()->setAutoFillBackground(false);
-    view()->setStyleSheet(QStringLiteral(
-        "QListView {"
-        " background: %1;"
-        " color: %2;"
-        " border: 1px solid %3;"
-        " border-radius: %4px;"
-        " outline: none;"
-        " padding: 4px 0px;"
-        " }"
-        " QListView::item {"
-        " border: none;"
-        " padding: 6px 12px;"
-        " min-height: %5px;"
-        " background: transparent;"
-        " }"
-        " QListView::item:hover {"
-        " background: %6;"
-        " }"
-        " QListView::item:selected {"
-        " background: %6;"
-        " color: %2;"
-        " }"
-        " QScrollBar:vertical { width: 8px; background: transparent; margin: 6px 4px 6px 0px; }"
-        " QScrollBar::handle:vertical { background: %7; border-radius: 4px; min-height: 24px; }"
-        " QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,"
-        " QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { height: 0px; background: transparent; }"
-    )
-        .arg(QStringLiteral("rgba(%1, %2, %3, %4)").arg(EraStyleColor::BasicWhite.red()).arg(EraStyleColor::BasicWhite.green()).arg(EraStyleColor::BasicWhite.blue()).arg(QString::number(EraStyleColor::BasicWhite.alphaF(), 'f', 3)))
-        .arg(QStringLiteral("rgba(%1, %2, %3, %4)").arg(EraStyleColor::MainText.red()).arg(EraStyleColor::MainText.green()).arg(EraStyleColor::MainText.blue()).arg(QString::number(EraStyleColor::MainText.alphaF(), 'f', 3)))
-        .arg(QStringLiteral("rgba(%1, %2, %3, %4)").arg(EraStyleColor::SecondaryBorder.red()).arg(EraStyleColor::SecondaryBorder.green()).arg(EraStyleColor::SecondaryBorder.blue()).arg(QString::number(EraStyleColor::SecondaryBorder.alphaF(), 'f', 3)))
-        .arg(kRadius)
-        .arg(kPopupItemHeight - 10)
-        .arg(QStringLiteral("rgba(%1, %2, %3, %4)").arg(EraStyleColor::BasicGray.red()).arg(EraStyleColor::BasicGray.green()).arg(EraStyleColor::BasicGray.blue()).arg(QString::number(EraStyleColor::BasicGray.alphaF(), 'f', 3)))
-        .arg(QStringLiteral("rgba(%1, %2, %3, %4)").arg(EraStyleColor::PrimaryBorder.red()).arg(EraStyleColor::PrimaryBorder.green()).arg(EraStyleColor::PrimaryBorder.blue()).arg(QString::number(EraStyleColor::PrimaryBorder.alphaF(), 'f', 3))));
+    refreshPopupStyle();
 
     m_anim = new QVariantAnimation(this);
     m_anim->setDuration(kAnimMs);
@@ -223,6 +258,16 @@ void EraComboBox::init()
     });
 
     connect(this, &QComboBox::currentIndexChanged, this, [this](int) { update(); });
+    if (auto* hints = QGuiApplication::styleHints())
+    {
+        connect(hints, &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
+            QTimer::singleShot(0, this, [this] {
+                refreshPopupStyle();
+                updateColors(false);
+                update();
+            });
+        });
+    }
     updateColors(false);
 }
 
@@ -262,10 +307,62 @@ void EraComboBox::animateTo(const QColor& border, bool animated)
 
 void EraComboBox::refreshPopupStyle()
 {
-    if (!view())
+    if (QCoreApplication::closingDown() || m_refreshingPopupStyle || !view())
         return;
+
+    m_refreshingPopupStyle = true;
     view()->window()->setAttribute(Qt::WA_MacShowFocusRect, false);
+    const QString popupStyleSheet = QStringLiteral(
+        "QListView {"
+        " background: %1;"
+        " color: %2;"
+        " border: 1px solid %3;"
+        " border-radius: %4px;"
+        " outline: none;"
+        " padding: 4px 0px;"
+        " }"
+        " QListView::item {"
+        " border: none;"
+        " padding: 6px 12px;"
+        " min-height: %5px;"
+        " background: transparent;"
+        " }"
+        " QListView::item:hover {"
+        " background: %6;"
+        " }"
+        " QListView::item:selected {"
+        " background: %6;"
+        " color: %2;"
+        " }"
+    )
+        .arg(toRgba(EraStyleColor::isDark() ? EraStyleColor::DarkPopup : EraStyleColor::BasicWhite))
+        .arg(toRgba(EraStyleColor::isDark() ? EraStyleColor::DarkMainText : EraStyleColor::MainText))
+        .arg(toRgba(EraStyleColor::isDark() ? EraStyleColor::DarkSecondaryBorder : EraStyleColor::SecondaryBorder))
+        .arg(kRadius)
+        .arg(kPopupItemHeight - 10)
+        .arg(toRgba(EraStyleColor::isDark() ? EraStyleColor::DarkHoverFill : EraStyleColor::BasicGray));
+
+    if (m_lastPopupStyleSheet != popupStyleSheet)
+    {
+        m_lastPopupStyleSheet = popupStyleSheet;
+        view()->setStyleSheet(popupStyleSheet);
+    }
+
     view()->update();
+    m_refreshingPopupStyle = false;
+}
+
+void EraComboBox::changeEvent(QEvent* event)
+{
+    QComboBox::changeEvent(event);
+    if (event->type() == QEvent::ApplicationPaletteChange)
+    {
+        QTimer::singleShot(0, this, [this] {
+            refreshPopupStyle();
+            updateColors(false);
+            update();
+        });
+    }
 }
 
 QColor EraComboBox::blend(const QColor& from, const QColor& to, qreal t)

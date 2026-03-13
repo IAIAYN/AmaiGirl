@@ -26,6 +26,7 @@ protected:
     void focusInEvent(QFocusEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
     void showPopup() override;
+    void changeEvent(QEvent* event) override;
 
 private:
     void init();
@@ -35,6 +36,8 @@ private:
     static QColor blend(const QColor& from, const QColor& to, qreal t);
 
     bool m_hovered{false};
+    bool m_refreshingPopupStyle{false};
+    QString m_lastPopupStyleSheet;
     QColor m_borderColor;
     QColor m_targetBorderColor;
     QVariantAnimation* m_anim{nullptr};

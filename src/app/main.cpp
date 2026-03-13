@@ -23,12 +23,14 @@
 #include "ui/AboutWindow.hpp"
 #include "ai/ChatController.hpp"
 #include "ui/ChatWindow.hpp"
+#include "ui/era-style/EraStyleHelper.hpp"
 #include "common/Utils.hpp"
 #include <QEvent>
 #include <QWindow>
 #include <QShortcut>
 #include <QTranslator>
 #include <QtGlobal>
+#include <cstdlib>
 
 static bool isLinuxWayland()
 {
@@ -258,7 +260,10 @@ int main(int argc, char *argv[]) {
     //fmt.setSamples(4); // MSAA x4: balance quality and memory (was 8)
     QSurfaceFormat::setDefaultFormat(fmt);
 
-    QApplication app(argc, argv);
+    // Work around a macOS/Qt shutdown crash in QApplication::~QApplication by
+    // letting the process exit without running this destructor.
+    auto* appPtr = new QApplication(argc, argv);
+    QApplication& app = *appPtr;
 #if defined(Q_OS_LINUX)
     if (!isLinuxWayland()) {
         QMessageBox::warning(
@@ -274,6 +279,7 @@ int main(int argc, char *argv[]) {
     QApplication::setApplicationDisplayName(QStringLiteral("AmaiGirl"));
     QCoreApplication::setOrganizationName(QStringLiteral("IAIAYN"));
     QApplication::setQuitOnLastWindowClosed(false);
+    EraStyle::installApplicationStyle(app);
 
     // Bootstrap settings and models
     SettingsManager::instance().load();
@@ -664,5 +670,7 @@ int main(int argc, char *argv[]) {
         });
     }
 
-    return app.exec();
+    const int exitCode = app.exec();
+    Q_UNUSED(appPtr);
+    std::_Exit(exitCode);
 }

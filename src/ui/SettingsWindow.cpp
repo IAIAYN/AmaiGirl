@@ -172,11 +172,13 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     d->central = new QWidget(this);
     setCentralWidget(d->central);
 
-    auto rootLay = new QVBoxLayout(d->central);
+    auto rootLay = new QHBoxLayout(d->central);
     rootLay->setContentsMargins(12,12,12,12);
+    rootLay->setSpacing(12);
     d->tabs = new EraTabBar(d->central);
+    d->tabs->setOrientation(EraTabBar::Orientation::Vertical);
     d->tabStack = new QStackedWidget(d->central);
-    rootLay->addWidget(d->tabs);
+    rootLay->addWidget(d->tabs, 0);
     rootLay->addWidget(d->tabStack, 1);
     connect(d->tabs, &EraTabBar::currentChanged, this, [this](int index){
         d->tabStack->setCurrentIndex(index);

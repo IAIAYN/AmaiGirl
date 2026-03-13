@@ -3,6 +3,10 @@
 
 #include <QEnterEvent>
 #include <QFocusEvent>
+#include <QCoreApplication>
+#include <QGuiApplication>
+#include <QStyleHints>
+#include <QTimer>
 
 namespace {
 constexpr int kRadius = 4;
@@ -58,38 +62,55 @@ void EraLineEdit::focusOutEvent(QFocusEvent* event)
     updateColors();
 }
 
+void EraLineEdit::changeEvent(QEvent* event)
+{
+    QLineEdit::changeEvent(event);
+}
+
 void EraLineEdit::init()
 {
     setAttribute(Qt::WA_MacShowFocusRect, false);
     setMinimumHeight(32);
+    if (auto* hints = QGuiApplication::styleHints())
+    {
+        connect(hints, &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
+            QTimer::singleShot(0, this, [this] { updateColors(); });
+        });
+    }
     updateColors();
 }
 
 void EraLineEdit::updateColors()
 {
+    if (QCoreApplication::closingDown() || m_updatingColors)
+        return;
+    m_updatingColors = true;
+
+    const bool dark = EraStyleColor::isDark();
+
     if (!isEnabled())
     {
-        m_borderColor = EraStyleColor::PrimaryBorder;
-        m_textColor = EraStyleColor::DisabledText;
-        m_placeholderColor = EraStyleColor::DisabledText;
+        m_borderColor = dark ? EraStyleColor::DarkSecondaryBorder : EraStyleColor::PrimaryBorder;
+        m_textColor = dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText;
+        m_placeholderColor = dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText;
     }
     else if (hasFocus())
     {
         m_borderColor = EraStyleColor::LinkClick;
-        m_textColor = EraStyleColor::MainText;
-        m_placeholderColor = EraStyleColor::AuxiliaryText;
+        m_textColor = dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText;
+        m_placeholderColor = dark ? EraStyleColor::DarkAuxiliaryText : EraStyleColor::AuxiliaryText;
     }
     else if (m_hovered)
     {
         m_borderColor = EraStyleColor::LinkHover;
-        m_textColor = EraStyleColor::MainText;
-        m_placeholderColor = EraStyleColor::AuxiliaryText;
+        m_textColor = dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText;
+        m_placeholderColor = dark ? EraStyleColor::DarkAuxiliaryText : EraStyleColor::AuxiliaryText;
     }
     else
     {
-        m_borderColor = EraStyleColor::PrimaryBorder;
-        m_textColor = EraStyleColor::MainText;
-        m_placeholderColor = EraStyleColor::AuxiliaryText;
+        m_borderColor = dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::PrimaryBorder;
+        m_textColor = dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText;
+        m_placeholderColor = dark ? EraStyleColor::DarkAuxiliaryText : EraStyleColor::AuxiliaryText;
     }
 
     QPalette palette = this->palette();
@@ -97,7 +118,13 @@ void EraLineEdit::updateColors()
     palette.setColor(QPalette::PlaceholderText, m_placeholderColor);
     setPalette(palette);
 
-    setStyleSheet(QStringLiteral(
+    const QColor bgColor = [&]() -> QColor {
+        if (!isEnabled())
+            return dark ? EraStyleColor::DarkSurfaceSubtle : EraStyleColor::BasicGray;
+        return dark ? EraStyleColor::DarkSurface : EraStyleColor::BasicWhite;
+    }();
+
+    const QString styleSheet = QStringLiteral(
         "QLineEdit {"
         " background: %1;"
         " color: %2;"
@@ -106,11 +133,20 @@ void EraLineEdit::updateColors()
         " padding: %6px %7px;"
         " }"
     )
-        .arg(toRgba(isEnabled() ? EraStyleColor::BasicWhite : EraStyleColor::BasicGray))
+        .arg(toRgba(bgColor))
         .arg(toRgba(m_textColor))
         .arg(QString::number(kBorderWidth, 'f', 1))
         .arg(toRgba(m_borderColor))
         .arg(kRadius)
         .arg(kPaddingV)
-        .arg(kPaddingH));
+        .arg(kPaddingH);
+
+    if (m_lastStyleSheet != styleSheet)
+    {
+        m_lastStyleSheet = styleSheet;
+        setStyleSheet(styleSheet);
+    }
+
+    update();
+    m_updatingColors = false;
 }

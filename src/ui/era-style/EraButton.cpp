@@ -223,10 +223,17 @@ EraButton::Palette EraButton::paletteForTone() const
             EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
              EraStyleColor::Info, EraStyleColor::InfoHover, EraStyleColor::InfoClick};
     case Tone::Neutral:
-    default:
-        return {EraStyleColor::PrimaryBorder, EraStyleColor::LinkHover, EraStyleColor::LinkClick,
-            EraStyleColor::SubordinateText, EraStyleColor::LinkHover, EraStyleColor::LinkClick, EraStyleColor::DisabledText,
-             EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite};
+    default: {
+        const bool dark = EraStyleColor::isDark();
+        return {dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::PrimaryBorder,
+            EraStyleColor::LinkHover, EraStyleColor::LinkClick,
+            dark ? EraStyleColor::DarkMainText : EraStyleColor::SubordinateText,
+            EraStyleColor::LinkHover, EraStyleColor::LinkClick,
+            dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText,
+            dark ? EraStyleColor::DarkSurface : EraStyleColor::BasicWhite,
+            dark ? EraStyleColor::DarkHoverFill : EraStyleColor::BasicWhite,
+            dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::BasicWhite};
+    }
     }
 }
 

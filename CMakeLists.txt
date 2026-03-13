@@ -342,6 +342,8 @@ set(ENGINE_SOURCES
 )
 set(UI_SOURCES
     src/ui/era-style/EraStyleColor.hpp
+    src/ui/era-style/EraStyleHelper.hpp
+    src/ui/era-style/EraStyleHelper.cpp
     src/ui/era-style/EraButton.hpp
     src/ui/era-style/EraButton.cpp
     src/ui/era-style/EraTextEdit.hpp

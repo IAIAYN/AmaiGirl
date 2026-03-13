@@ -22,11 +22,14 @@ protected:
     void leaveEvent(QEvent* event) override;
     void focusInEvent(QFocusEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 private:
     void updateColors();
 
     bool m_hovered{false};
+    bool m_updatingColors{false};
+    QString m_lastStyleSheet;
     QColor m_borderColor;
     QColor m_placeholderColor;
     QColor m_textColor;
