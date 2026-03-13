@@ -21,11 +21,14 @@
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QHelpEvent>
+#include <QList>
 #include <QPen>
 #include <QScreen>
+#include <QLayout>
 
 namespace {
 constexpr auto kAppStyleInstalledProperty = "_amaigirl_era_app_style_installed";
+constexpr auto kThemeSyncInstalledProperty = "_amaigirl_era_theme_sync_installed";
 constexpr auto kScrollBarHelperInstalledProperty = "_amaigirl_era_scrollbar_helper_installed";
 constexpr int kScrollBarHideDelayMs = 80;
 constexpr int kScrollBarFadeMs = 140;
@@ -36,6 +39,104 @@ constexpr qreal kHandleBaseAlpha = 0.360;
 constexpr qreal kHandleHoverAlpha = 0.520;
 constexpr qreal kHandlePressedAlpha = 0.640;
 constexpr int kToolTipRadius = 8;
+
+bool isThemeRelatedEventType(QEvent::Type type)
+{
+    return type == QEvent::ThemeChange
+        || type == QEvent::StyleChange
+        || type == QEvent::ApplicationPaletteChange
+        || type == QEvent::PaletteChange;
+}
+
+class EraThemeSyncFilter final : public QObject
+{
+public:
+    explicit EraThemeSyncFilter(QApplication* app)
+        : QObject(app)
+        , m_app(app)
+    {
+        if (auto* hints = QGuiApplication::styleHints())
+        {
+            connect(hints, &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
+                scheduleRefresh();
+            });
+        }
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == m_app && event && isThemeRelatedEventType(event->type()))
+            scheduleRefresh();
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    void scheduleRefresh()
+    {
+        if (!m_app || m_refreshPending)
+            return;
+
+        m_refreshPending = true;
+        QTimer::singleShot(0, m_app, [this] {
+            m_refreshPending = false;
+            refreshApplicationTheme();
+        });
+    }
+
+    void refreshApplicationTheme()
+    {
+        if (!m_app)
+            return;
+
+        const QString styleSheet = m_app->styleSheet();
+        m_app->setStyleSheet(QString());
+        m_app->setStyleSheet(styleSheet);
+
+        auto repolishWidgetTree = [](QWidget* root) {
+            if (!root)
+                return;
+
+            QList<QWidget*> stack;
+            stack.push_back(root);
+
+            while (!stack.isEmpty())
+            {
+                QWidget* w = stack.takeLast();
+                if (!w)
+                    continue;
+
+                if (QStyle* style = w->style())
+                {
+                    style->unpolish(w);
+                    style->polish(w);
+                }
+
+                if (auto* layout = w->layout())
+                    layout->invalidate();
+
+                const auto children = w->children();
+                for (QObject* child : children)
+                {
+                    if (auto* childWidget = qobject_cast<QWidget*>(child))
+                        stack.push_back(childWidget);
+                }
+
+                w->updateGeometry();
+                w->update();
+            }
+        };
+
+        const auto topLevels = m_app->topLevelWidgets();
+        for (QWidget* w : topLevels)
+        {
+            repolishWidgetTree(w);
+        }
+    }
+
+    QApplication* m_app{nullptr};
+    bool m_refreshPending{false};
+};
 
 class EraToolTipWidget final : public QWidget
 {
@@ -540,6 +641,11 @@ void installApplicationStyle(QApplication& app)
     app.setStyleSheet(styleSheet);
 
     app.installEventFilter(new EraToolTipFilter(&app));
+    if (!app.property(kThemeSyncInstalledProperty).toBool())
+    {
+        app.installEventFilter(new EraThemeSyncFilter(&app));
+        app.setProperty(kThemeSyncInstalledProperty, true);
+    }
     app.setProperty(kAppStyleInstalledProperty, true);
 }
 

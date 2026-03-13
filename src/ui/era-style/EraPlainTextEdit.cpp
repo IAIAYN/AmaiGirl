@@ -69,6 +69,17 @@ void EraPlainTextEdit::focusOutEvent(QFocusEvent* event)
 void EraPlainTextEdit::changeEvent(QEvent* event)
 {
     QPlainTextEdit::changeEvent(event);
+    if (!event)
+        return;
+
+    const QEvent::Type type = event->type();
+    if (type == QEvent::ApplicationPaletteChange
+        || type == QEvent::PaletteChange
+        || type == QEvent::ThemeChange
+        || type == QEvent::StyleChange)
+    {
+        QTimer::singleShot(0, this, [this] { updateColors(); });
+    }
 }
 
 void EraPlainTextEdit::init()

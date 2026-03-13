@@ -157,7 +157,10 @@ public:
 
     void updateBubbleTextStyle()
     {
-        const QColor text = m_isUser ? EraStyleColor::MainText : EraStyleColor::BasicWhite;
+        const bool dark = EraStyleColor::isDark();
+        const QColor text = m_isUser
+            ? (dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText)
+            : EraStyleColor::BasicWhite;
         m_text->setStyleSheet(QStringLiteral(
             "QTextBrowser{"
             "background:transparent; padding:0px; margin:0px; border:none; color:%1; }"
@@ -229,10 +232,11 @@ protected:
 
         QColor bg;
         QColor border;
+        const bool dark = EraStyleColor::isDark();
         if (m_isUser)
         {
-            bg = EraStyleColor::BasicWhite;
-            border = EraStyleColor::PrimaryBorder;
+            bg = dark ? EraStyleColor::DarkSurface : EraStyleColor::BasicWhite;
+            border = dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::PrimaryBorder;
         }
         else
         {
@@ -394,6 +398,24 @@ public:
         // Force immediate geometry recalculation so bubble sizing changes are visible right away.
         list->doItemsLayout();
         list->updateGeometry();
+        list->viewport()->update();
+    }
+
+    void refreshBubbleTheme()
+    {
+        if (!list) return;
+
+        for (int i = 0; i < list->count(); ++i)
+        {
+            auto* item = list->item(i);
+            if (!item) continue;
+            if (auto* w = qobject_cast<ChatMessageWidget*>(list->itemWidget(item)))
+            {
+                w->updateBubbleTextStyle();
+                w->update();
+            }
+        }
+
         list->viewport()->update();
     }
 
@@ -807,10 +829,14 @@ bool ChatWindow::event(QEvent* e)
         }
     }
 
-    if (e->type() == QEvent::ApplicationPaletteChange || e->type() == QEvent::PaletteChange)
+    if (e->type() == QEvent::ApplicationPaletteChange
+        || e->type() == QEvent::PaletteChange
+        || e->type() == QEvent::ThemeChange
+        || e->type() == QEvent::StyleChange)
     {
         if (d)
         {
+            d->refreshBubbleTheme();
             if (d->list) d->list->viewport()->update();
             if (d->input) d->input->update();
         }

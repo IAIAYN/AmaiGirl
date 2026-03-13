@@ -355,7 +355,14 @@ void EraComboBox::refreshPopupStyle()
 void EraComboBox::changeEvent(QEvent* event)
 {
     QComboBox::changeEvent(event);
-    if (event->type() == QEvent::ApplicationPaletteChange)
+    if (!event)
+        return;
+
+    const QEvent::Type type = event->type();
+    if (type == QEvent::ApplicationPaletteChange
+        || type == QEvent::PaletteChange
+        || type == QEvent::ThemeChange
+        || type == QEvent::StyleChange)
     {
         QTimer::singleShot(0, this, [this] {
             refreshPopupStyle();

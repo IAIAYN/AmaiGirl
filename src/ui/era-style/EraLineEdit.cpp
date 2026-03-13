@@ -65,6 +65,17 @@ void EraLineEdit::focusOutEvent(QFocusEvent* event)
 void EraLineEdit::changeEvent(QEvent* event)
 {
     QLineEdit::changeEvent(event);
+    if (!event)
+        return;
+
+    const QEvent::Type type = event->type();
+    if (type == QEvent::ApplicationPaletteChange
+        || type == QEvent::PaletteChange
+        || type == QEvent::ThemeChange
+        || type == QEvent::StyleChange)
+    {
+        QTimer::singleShot(0, this, [this] { updateColors(); });
+    }
 }
 
 void EraLineEdit::init()
