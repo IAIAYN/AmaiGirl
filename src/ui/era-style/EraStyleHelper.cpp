@@ -27,21 +27,15 @@
 #include <QLayout>
 #include <QWidget>
 
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
-#include "ui/era-style/EraMacWindowTheme.hpp"
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN32) || defined(Q_OS_LINUX)
+#include "ui/era-style/EraNativeWindowTheme.hpp"
 #endif
-
-namespace EraStyle
-{
-    // Keep a local declaration so static analyzers always see the symbol.
-    void syncNativeWindowTheme(QWidget* widget);
-}
 
 namespace {
 constexpr auto kAppStyleInstalledProperty = "_amaigirl_era_app_style_installed";
 constexpr auto kThemeSyncInstalledProperty = "_amaigirl_era_theme_sync_installed";
 constexpr auto kScrollBarHelperInstalledProperty = "_amaigirl_era_scrollbar_helper_installed";
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN32) || defined(Q_OS_LINUX)
 constexpr auto kNativeWindowThemePendingProperty = "_amaigirl_native_window_theme_pending";
 #endif
 constexpr int kScrollBarHideDelayMs = 80;
@@ -62,7 +56,7 @@ bool isThemeRelatedEventType(QEvent::Type type)
         || type == QEvent::PaletteChange;
 }
 
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN32) || defined(Q_OS_LINUX)
 bool isNativeWindowSyncEventType(QEvent::Type type)
 {
     return type == QEvent::Show
@@ -211,7 +205,7 @@ void applyApplicationTheme(QApplication& app)
     for (QWidget* w : topLevels)
     {
         repolishWidgetTree(w);
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN32) || defined(Q_OS_LINUX)
         scheduleNativeWindowThemeSync(&app, w);
 #endif
     }
@@ -238,7 +232,7 @@ protected:
         if (watched == m_app && event && !m_refreshing && isThemeRelatedEventType(event->type()))
             scheduleRefresh();
 
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN32) || defined(Q_OS_LINUX)
         if (event && isNativeWindowSyncEventType(event->type()))
         {
             if (auto* widget = qobject_cast<QWidget*>(watched))

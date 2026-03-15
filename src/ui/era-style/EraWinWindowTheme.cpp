@@ -1,6 +1,8 @@
-#include "ui/era-style/EraMacWindowTheme.hpp"
+#include "ui/era-style/EraNativeWindowTheme.hpp"
 
-#if defined(Q_OS_WIN)
+#include <QtCore/qsystemdetection.h>
+
+#if defined(Q_OS_WIN32)
 
 #include <QWidget>
 

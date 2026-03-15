@@ -19,7 +19,7 @@ constexpr int kSepH        = 1;
 constexpr int kVerticalDividerW = 1;
 constexpr int kAnimMs      = 330;
 constexpr int kVerticalBarMinWidth = 112;
-}
+} // namespace
 
 EraTabBar::EraTabBar(QWidget* parent)
     : QWidget(parent)

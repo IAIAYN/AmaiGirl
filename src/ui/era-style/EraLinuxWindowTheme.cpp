@@ -1,4 +1,6 @@
-#include "ui/era-style/EraMacWindowTheme.hpp"
+#include "ui/era-style/EraNativeWindowTheme.hpp"
+
+#include <QtCore/qsystemdetection.h>
 
 #if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
 

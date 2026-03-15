@@ -1,4 +1,4 @@
-#include "ui/era-style/EraMacWindowTheme.hpp"
+#include "ui/era-style/EraNativeWindowTheme.hpp"
 
 #import <AppKit/AppKit.h>
 
