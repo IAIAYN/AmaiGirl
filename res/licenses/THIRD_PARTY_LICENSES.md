@@ -22,7 +22,9 @@
   - Qt6::Network
   - Qt6::Multimedia
   - Qt6::Svg
-- **许可证模型**：开源使用通常基于 LGPL v3（本项目暂未使用基于 GPL 的模块/组件）。
+- **许可证模型**：
+  - 开源使用通常基于 LGPL v3（本项目暂未使用基于 GPL 的模块/组件）。
+  - 您可以在这里获取相关模块/组件的源码：https://download.qt.io/official_releases/qt/
 - **上游许可证信息**：
   - https://www.qt.io/development/open-source-lgpl-obligations
   - https://www.gnu.org/licenses/lgpl-3.0.html
