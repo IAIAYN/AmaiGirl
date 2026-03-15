@@ -66,7 +66,8 @@ void EraSwitch::paintEvent(QPaintEvent* event)
     const qreal knobX = trackRect.left() + kTrackInset + knobTravel * m_thumbT;
     const qreal knobY = trackRect.top() + kTrackInset;
 
-    painter.setBrush(isEnabled() ? EraStyleColor::BasicWhite : EraStyleColor::ThreeLevels);
+    const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
+    painter.setBrush(isEnabled() ? t.panelRaised : t.inputBackgroundDisabled);
     painter.drawEllipse(QRectF(knobX, knobY, knobDiameter, knobDiameter));
 
     if (!text().isEmpty())
@@ -144,20 +145,21 @@ void EraSwitch::init()
 
 void EraSwitch::updateTargetState(bool animated)
 {
-    QColor targetTrackColor = EraStyleColor::DisabledText;
+    const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
+    QColor targetTrackColor = t.textDisabled;
     qreal targetThumbT = isChecked() ? 1.0 : 0.0;
 
     if (!isEnabled())
     {
-        targetTrackColor = isChecked() ? EraStyleColor::PrimaryBorder : EraStyleColor::SecondaryBorder;
+        targetTrackColor = isChecked() ? t.borderPrimary : t.borderSecondary;
     }
     else if (isChecked())
     {
-        targetTrackColor = m_pressed ? EraStyleColor::LinkClick : (m_hovered ? EraStyleColor::LinkHover : EraStyleColor::LinkClick);
+        targetTrackColor = m_pressed ? t.accentPressed : (m_hovered ? t.accentHover : t.accent);
     }
     else
     {
-        targetTrackColor = m_pressed ? EraStyleColor::AuxiliaryText : (m_hovered ? EraStyleColor::AuxiliaryText : EraStyleColor::DisabledText);
+        targetTrackColor = m_pressed ? t.textMuted : (m_hovered ? t.textSecondary : t.textDisabled);
     }
 
     animateTo(targetThumbT, targetTrackColor, animated);

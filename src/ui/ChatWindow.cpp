@@ -3,35 +3,37 @@
 #include "common/SettingsManager.hpp"
 #include "common/Utils.hpp"
 
-#include <QAbstractTextDocumentLayout>
 #include <QBoxLayout>
 #include <QDateTime>
 #include <QDir>
+#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
-#include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
-#include <QPushButton>
-#include "ui/era-style/EraButton.hpp"
-#include "ui/era-style/EraTextEdit.hpp"
-#include "ui/era-style/EraStyleColor.hpp"
 #include <QScrollBar>
 #include <QTextBrowser>
-#include <QTextBlock>
 #include <QTextEdit>
-#include <QKeyEvent>
 #include <QTextOption>
-#include <QTimer>
-#include <QPlainTextEdit>
+
+#include "ui/era-style/EraChatWidgets.hpp"
 
 namespace {
+
+constexpr int kComposerMinLines = 2;
+constexpr int kComposerMaxLines = 5;
+constexpr int kComposerRadius = 18;
+constexpr int kComposerSendButtonSize = 34;
+constexpr int kComposerSendIconSize = 18;
+constexpr int kComposerFooterControlSize = 22;
+constexpr int kComposerClearIconSize = 17;
+constexpr qreal kComposerInputDocumentMargin = 3.0;
 
 QPixmap circleAvatar(const QPixmap& src, int logicalSize, qreal devicePixelRatio)
 {
@@ -106,26 +108,14 @@ public:
         m_avatar->setFixedSize(32, 32);
         setAvatar(avatar);
 
-        m_bubbleBox = new QWidget(this);
+        m_bubbleBox = new EraChatBubbleBox(m_isUser, this);
         auto* bubbleLay = new QVBoxLayout(m_bubbleBox);
         bubbleLay->setContentsMargins(12, 8, 12, 8);
         bubbleLay->setSpacing(0);
 
-        m_text = new QTextBrowser(m_bubbleBox);
+        m_text = new EraChatBubbleTextView(m_isUser, m_bubbleBox);
         m_text->setText(text);
-        m_text->setOpenExternalLinks(true);
-        m_text->setFrameShape(QFrame::NoFrame);
-        m_text->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        m_text->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        m_text->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
-        m_text->setContextMenuPolicy(Qt::DefaultContextMenu);
-        m_text->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
-        m_text->document()->setDocumentMargin(0.0);
-        m_text->setContentsMargins(0, 0, 0, 0);
         updateBubbleTextStyle();
-        m_text->setWordWrapMode(QTextOption::WordWrap);
-        m_text->setLineWrapMode(QTextEdit::WidgetWidth);
-        m_text->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         bubbleLay->addWidget(m_text);
         m_bubbleBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
@@ -156,12 +146,10 @@ public:
 
     void updateBubbleTextStyle()
     {
-        const QColor text = m_isUser ? EraStyleColor::MainText : EraStyleColor::BasicWhite;
-        m_text->setStyleSheet(QStringLiteral(
-            "QTextBrowser{"
-            "background:transparent; padding:0px; margin:0px; border:none; color:%1; }"
-            "QTextBrowser > QWidget { margin:0px; padding:0px; background:transparent; }"
-        ).arg(text.name(QColor::HexRgb)));
+        if (m_bubbleBox)
+            m_bubbleBox->setUserBubble(m_isUser);
+        if (m_text)
+            m_text->setUserMessage(m_isUser);
     }
 
     void setMaxBubbleWidth(int w)
@@ -209,39 +197,6 @@ public:
         const int bubbleH = m_bubbleBox ? m_bubbleBox->height() : 0;
         const int h = qMax(32, bubbleH) + rowTopBottom;
         return { m_rowWidth, h };
-    }
-
-protected:
-    void paintEvent(QPaintEvent* ev) override
-    {
-        QWidget::paintEvent(ev);
-
-        QRect bubbleRect = m_bubbleBox ? m_bubbleBox->geometry() : QRect();
-
-        // Clamp bubble to our content area so it never overlaps layout margins.
-        const QMargins cm = contentsMargins();
-        const QRect contentRect = rect().adjusted(cm.left(), cm.top(), -cm.right(), -cm.bottom());
-        bubbleRect = bubbleRect.intersected(contentRect);
-
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-
-        QColor bg;
-        QColor border;
-        if (m_isUser)
-        {
-            bg = EraStyleColor::BasicWhite;
-            border = EraStyleColor::PrimaryBorder;
-        }
-        else
-        {
-            bg = EraStyleColor::Link;
-            border = EraStyleColor::LinkClick;
-        }
-
-        p.setPen(QPen(border, 1.0));
-        p.setBrush(bg);
-        p.drawRoundedRect(bubbleRect, 14, 14);
     }
 
 private:
@@ -314,8 +269,8 @@ private:
 
     bool m_isUser{false};
     QLabel* m_avatar{nullptr};
-    QWidget* m_bubbleBox{nullptr};
-    QTextBrowser* m_text{nullptr};
+    EraChatBubbleBox* m_bubbleBox{nullptr};
+    EraChatBubbleTextView* m_text{nullptr};
     int m_maxBubbleWidth{360};
     int m_rowWidth{520};
 };
@@ -327,10 +282,13 @@ public:
     QString modelFolder;
     QString modelDir;
 
-    QListWidget* list{nullptr};
-    EraTextEdit* input{nullptr};
-    EraButton* sendBtn{nullptr};
-    EraButton* clearBtn{nullptr};
+    QWidget* central{nullptr};
+    EraChatListWidget* list{nullptr};
+    QWidget* composerCard{nullptr};
+    EraChatComposerEdit* input{nullptr};
+    EraIconToolButton* sendBtn{nullptr};
+    EraIconToolButton* clearBtn{nullptr};
+    QLabel* countLabel{nullptr};
 
     QPixmap userAvatar;
     QPixmap aiAvatar;
@@ -394,6 +352,26 @@ public:
         list->doItemsLayout();
         list->updateGeometry();
         list->viewport()->update();
+    }
+
+    void updateInputMetrics()
+    {
+        if (!input) return;
+
+        const int targetHeight = input->preferredHeight(kComposerMinLines, kComposerMaxLines);
+        if (input->height() != targetHeight)
+            input->setFixedHeight(targetHeight);
+
+        const QFontMetrics fm(input->font());
+        const int maxDocumentHeight = fm.lineSpacing() * kComposerMaxLines;
+        const bool overflow = input->documentHeight() > maxDocumentHeight;
+        input->setVerticalScrollBarPolicy(overflow ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
+    }
+
+    void updateInputCount()
+    {
+        if (!countLabel || !input) return;
+        countLabel->setText(QString::number(input->toPlainText().size()));
     }
 
     void rebuildFromMessages()
@@ -496,45 +474,70 @@ ChatWindow::ChatWindow(QWidget* parent)
 #endif
     resize(520, 640);
 
-    auto* central = new QWidget(this);
-    setCentralWidget(central);
+    d->central = new QWidget(this);
+    d->central->setObjectName(QStringLiteral("chatCentral"));
+    setCentralWidget(d->central);
 
-    auto* root = new QVBoxLayout(central);
-    root->setContentsMargins(10, 10, 10, 10);
-    root->setSpacing(8);
+    auto* root = new QVBoxLayout(d->central);
+    root->setContentsMargins(12, 12, 12, 12);
+    root->setSpacing(10);
 
-    d->list = new QListWidget(central);
+    d->list = new EraChatListWidget(d->central);
     d->list->setSpacing(6);
     d->list->setUniformItemSizes(false);
     d->list->setSelectionMode(QAbstractItemView::NoSelection);
     d->list->setFocusPolicy(Qt::NoFocus);
+    d->list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     d->list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     root->addWidget(d->list, 1);
 
-    auto* bottom = new QWidget(central);
-    auto* bl = new QHBoxLayout(bottom);
-    bl->setContentsMargins(0, 0, 0, 0);
-    bl->setSpacing(8);
+    d->composerCard = new QWidget(d->central);
+    d->composerCard->setObjectName(QStringLiteral("chatComposerCard"));
+    auto* composerLayout = new QVBoxLayout(d->composerCard);
+    composerLayout->setContentsMargins(14, 14, 14, 14);
+    composerLayout->setSpacing(6);
 
-    d->input = new EraTextEdit(bottom);
+    auto* editorRow = new QHBoxLayout();
+    editorRow->setContentsMargins(0, 0, 0, 0);
+    editorRow->setSpacing(10);
+
+    d->input = new EraChatComposerEdit(d->composerCard);
+    d->input->document()->setDocumentMargin(kComposerInputDocumentMargin);
     d->input->setPlaceholderText(tr("输入消息... (Enter 发送 / Shift+Enter 换行)"));
-    d->input->setAcceptRichText(false);
-    d->input->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    d->input->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    d->input->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    d->input->setMinimumHeight(32);
-    d->input->setMaximumHeight(120);
+    d->sendBtn = new EraIconToolButton(d->composerCard);
+    d->sendBtn->setTone(EraIconToolButton::Tone::Accent);
+    d->sendBtn->setIconLogicalSize(kComposerSendIconSize);
+    d->sendBtn->setFixedSize(kComposerSendButtonSize, kComposerSendButtonSize);
+    d->sendBtn->setToolTip(tr("发送"));
+    d->sendBtn->setIcon(QIcon(appResourcePath(QStringLiteral("icons/chat-send.svg"))));
 
-    d->sendBtn = new EraButton(tr("发送"), bottom);
-    d->sendBtn->setTone(EraButton::Tone::Link);
-    d->clearBtn = new EraButton(tr("清除"), bottom);
-    d->clearBtn->setTone(EraButton::Tone::Danger);
+    editorRow->addWidget(d->input, 1);
+    editorRow->addWidget(d->sendBtn, 0, Qt::AlignRight | Qt::AlignBottom);
+    composerLayout->addLayout(editorRow);
 
-    bl->addWidget(d->input, 1);
-    bl->addWidget(d->sendBtn);
-    bl->addWidget(d->clearBtn);
+    auto* footerRow = new QHBoxLayout();
+    footerRow->setContentsMargins(0, 0, 0, 0);
+    footerRow->setSpacing(8);
 
-    root->addWidget(bottom);
+    d->clearBtn = new EraIconToolButton(d->composerCard);
+    d->clearBtn->setTone(EraIconToolButton::Tone::Ghost);
+    d->clearBtn->setIconLogicalSize(kComposerClearIconSize);
+    d->clearBtn->setToolTip(tr("清除"));
+    d->clearBtn->setFixedSize(kComposerFooterControlSize, kComposerFooterControlSize);
+    d->clearBtn->setIcon(QIcon(appResourcePath(QStringLiteral("icons/chat-clear.svg"))));
+
+    d->countLabel = new QLabel(QStringLiteral("0"), d->composerCard);
+    d->countLabel->setObjectName(QStringLiteral("chatComposerCountLabel"));
+    d->countLabel->setAlignment(Qt::AlignCenter);
+    d->countLabel->setFixedSize(kComposerSendButtonSize, kComposerFooterControlSize);
+    d->countLabel->setContentsMargins(0, 1, 0, 0);
+
+    footerRow->addWidget(d->clearBtn, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    footerRow->addStretch(1);
+    footerRow->addWidget(d->countLabel, 0, Qt::AlignRight | Qt::AlignVCenter);
+    composerLayout->addLayout(footerRow);
+
+    root->addWidget(d->composerCard);
 
     // 默认头像：统一使用 avator-icon.png（用户头像 + 模型无 png 时的 AI 默认头像）
     const QString defaultAvatarPath = appResourcePath(QStringLiteral("icons/avator-icon.png"));
@@ -571,17 +574,18 @@ ChatWindow::ChatWindow(QWidget* parent)
         emit requestSendMessage(d->modelFolder, text);
     };
 
-    connect(d->sendBtn, &QPushButton::clicked, this, sendNow);
-    connect(d->input, &EraTextEdit::sendRequested, this, sendNow);
-
-    // Auto-grow the input box height with content up to maxHeight.
-    connect(d->input->document(), &QTextDocument::contentsChanged, this, [this]{
-        const int docH = int(std::ceil(d->input->document()->size().height()));
-        const int target = qBound(32, docH + 6, 120);
-        d->input->setFixedHeight(target);
+    connect(d->sendBtn, &QToolButton::clicked, this, sendNow);
+    connect(d->input, &EraChatComposerEdit::sendRequested, this, sendNow);
+    connect(d->input, &EraChatComposerEdit::metricsChanged, this, [this] {
+        if (!d) return;
+        d->updateInputMetrics();
+    });
+    connect(d->input, &QTextEdit::textChanged, this, [this] {
+        if (!d) return;
+        d->updateInputCount();
     });
 
-    connect(d->clearBtn, &QPushButton::clicked, this, [this]{
+    connect(d->clearBtn, &QToolButton::clicked, this, [this]{
         if (d->modelFolder.isEmpty()) return;
         const auto ret = QMessageBox::question(this, tr("确认"), tr("确定要清除当前模型的聊天记录吗？"));
         if (ret != QMessageBox::Yes) return;
@@ -597,6 +601,8 @@ ChatWindow::ChatWindow(QWidget* parent)
     d->list->viewport()->installEventFilter(this);
 
     // Initial relayout after show; without this some bubbles get an incorrect first width.
+    d->updateInputMetrics();
+    d->updateInputCount();
     d->scheduleRelayout(this);
 }
 
@@ -793,8 +799,8 @@ bool ChatWindow::event(QEvent* e)
         if (d)
         {
             if (d->input) d->input->setPlaceholderText(tr("输入消息... (Enter 发送 / Shift+Enter 换行)"));
-            if (d->sendBtn) d->sendBtn->setText(tr("发送"));
-            if (d->clearBtn) d->clearBtn->setText(tr("清除"));
+            if (d->sendBtn) d->sendBtn->setToolTip(tr("发送"));
+            if (d->clearBtn) d->clearBtn->setToolTip(tr("清除"));
         }
     }
 
@@ -804,14 +810,22 @@ bool ChatWindow::event(QEvent* e)
         {
             d->applyBubbleWidthForAll();
         }
+        if (d)
+        {
+            d->updateInputMetrics();
+        }
     }
 
-    if (e->type() == QEvent::ApplicationPaletteChange || e->type() == QEvent::PaletteChange)
+    if (e->type() == QEvent::ApplicationPaletteChange
+        || e->type() == QEvent::PaletteChange
+        || e->type() == QEvent::ThemeChange
+        || e->type() == QEvent::StyleChange)
     {
         if (d)
         {
             if (d->list) d->list->viewport()->update();
-            if (d->input) d->input->update();
+            d->updateInputMetrics();
+            d->scheduleRelayout(this);
         }
     }
 

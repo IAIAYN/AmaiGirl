@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
 project(AmaiGirl LANGUAGES CXX)
 
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 if(WIN32 AND NOT MSVC)
     message(FATAL_ERROR
         "Windows builds currently require MSVC (Visual Studio 2022 / v143 or newer). "
@@ -220,7 +224,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Qt6
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network Multimedia Svg)
 
 # Live2D Cubism Core SDK
 set(CUBISM_SDK_DIR "${CMAKE_SOURCE_DIR}/sdk/cubism")
@@ -342,6 +346,10 @@ set(ENGINE_SOURCES
 )
 set(UI_SOURCES
     src/ui/era-style/EraStyleColor.hpp
+    src/ui/era-style/EraStyleHelper.hpp
+    src/ui/era-style/EraStyleHelper.cpp
+    src/ui/era-style/EraChatWidgets.hpp
+    src/ui/era-style/EraChatWidgets.cpp
     src/ui/era-style/EraButton.hpp
     src/ui/era-style/EraButton.cpp
     src/ui/era-style/EraTextEdit.hpp
@@ -363,6 +371,25 @@ set(UI_SOURCES
     src/ui/ChatWindow.hpp
     src/ui/ChatWindow.cpp
 )
+
+if(APPLE)
+    list(APPEND UI_SOURCES
+        src/ui/era-style/EraMacWindowTheme.hpp
+        src/ui/era-style/EraMacWindowTheme.mm
+    )
+endif()
+
+if(WIN32)
+    list(APPEND UI_SOURCES
+        src/ui/era-style/EraWinWindowTheme.cpp
+    )
+endif()
+
+if(UNIX AND NOT APPLE)
+    list(APPEND UI_SOURCES
+        src/ui/era-style/EraLinuxWindowTheme.cpp
+    )
+endif()
 set(COMMON_SOURCES
     src/common/Utils.hpp
     src/common/Utils.cpp
@@ -440,8 +467,13 @@ target_link_libraries(AmaiGirl PRIVATE
     Qt6::OpenGLWidgets
     Qt6::Network
     Qt6::Multimedia
+    Qt6::Svg
     Live2DCubismCore
 )
+
+if(WIN32)
+    target_link_libraries(AmaiGirl PRIVATE dwmapi)
+endif()
 
 # macOS specifics
 if(APPLE)

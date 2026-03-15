@@ -16,21 +16,21 @@
 
 - 构建环境：Xcode 15（macOS 14 SDK）或更高版本
 - 编译工具：CMake + Ninja + Clang
-- Qt：Qt 6（项目当前使用 Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia）
+- Qt：Qt 6（项目当前使用 Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg）
 
 #### Windows
 
 - 建议环境：Windows 10/11（x86_64）
 - 编译工具：Visual Studio 2022（MSVC v143）或更新版本，或在对应 MSVC 开发者环境中使用 CMake + Ninja
 - 当前不支持 MinGW/GCC：仓库使用的 Live2D Cubism Windows 库为 MSVC 产物
-- Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia），并确保 `windeployqt` 可用
+- Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg），并确保 `windeployqt` 可用
 - Live2D：请确认 `sdk/cubism/lib/windows/x86_64/<toolset>/` 下存在对应 MSVC 工具集的 `Live2DCubismCore_MD.lib` / `Live2DCubismCore_MDd.lib`
 
 #### Linux
 
 - 建议环境：Wayland 会话（X11 可作为回退后端）
 - 构建工具：CMake + Ninja + GCC/Clang
-- Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia）
+- Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg）
 - 可选打包工具（AppImage）：`linuxdeploy`、`appimagetool`
 
 ### 2. **Live2D SDK（重要，必须自行下载）**

@@ -22,6 +22,7 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QDebug>
+#include <QIcon>
 #include "ui/era-style/EraButton.hpp"
 #include <QFileDialog>
 #include <QMessageBox>
@@ -36,6 +37,7 @@
 #include <QScreen>
 #include <QGuiApplication>
 #include <QCursor>
+#include <QFont>
 #include <QLineEdit>
 #include "ui/era-style/EraLineEdit.hpp"
 #include <QPlainTextEdit>
@@ -66,6 +68,29 @@ static bool copyRecursively(const QString& srcPath, const QString& dstPath) {
         }
     }
     return true;
+}
+
+namespace {
+constexpr int kFormHorizontalSpacing = 12;
+constexpr int kFormVerticalSpacing = 10;
+constexpr int kFormLeftPadding = 20;
+constexpr int kFormRightPadding = 36;
+constexpr int kFormTopPadding = 12;
+constexpr int kFormBottomPadding = 16;
+constexpr int kInlineRowSpacing = 8;
+} // namespace
+
+static void applyLeftAlignedFormLayout(QFormLayout* form)
+{
+    if (!form) return;
+    // Keep all tabs visually consistent and reserve left/right breathing room.
+    form->setContentsMargins(kFormLeftPadding, kFormTopPadding, kFormRightPadding, kFormBottomPadding);
+    form->setHorizontalSpacing(kFormHorizontalSpacing);
+    form->setVerticalSpacing(kFormVerticalSpacing);
+    form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    form->setRowWrapPolicy(QFormLayout::DontWrapRows);
 }
 
 class SettingsWindow::Impl {
@@ -172,11 +197,21 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     d->central = new QWidget(this);
     setCentralWidget(d->central);
 
-    auto rootLay = new QVBoxLayout(d->central);
+    auto rootLay = new QHBoxLayout(d->central);
     rootLay->setContentsMargins(12,12,12,12);
+    rootLay->setSpacing(0);
     d->tabs = new EraTabBar(d->central);
+    {
+        QFont tabFont = d->tabs->font();
+        if (tabFont.pointSizeF() > 0.0)
+            tabFont.setPointSizeF(tabFont.pointSizeF() + 2.0);
+        else
+            tabFont.setPointSize(14);
+        d->tabs->setFont(tabFont);
+    }
+    d->tabs->setOrientation(EraTabBar::Orientation::Vertical);
     d->tabStack = new QStackedWidget(d->central);
-    rootLay->addWidget(d->tabs);
+    rootLay->addWidget(d->tabs, 0);
     rootLay->addWidget(d->tabStack, 1);
     connect(d->tabs, &EraTabBar::currentChanged, this, [this](int index){
         d->tabStack->setCurrentIndex(index);
@@ -188,11 +223,13 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     d->basic = new QWidget(d->tabStack);
     auto form = new QFormLayout(d->basic);
     d->basicForm = form;
+    applyLeftAlignedFormLayout(form);
 
     // Model path row
     auto pathRow = new QWidget(d->basic);
     d->pathRowWidget = pathRow;
     auto hl = new QHBoxLayout(pathRow); hl->setContentsMargins(0,0,0,0);
+    hl->setSpacing(kInlineRowSpacing);
     d->pathLabel = new QLabel(SettingsManager::instance().modelsRoot(), pathRow);
     d->chooseBtn = new EraButton(tr("选择路径"), pathRow);
     d->chooseBtn->setTone(EraButton::Tone::Link);
@@ -213,6 +250,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     auto topRow = new QWidget(d->basic);
     d->topRowWidget = topRow;
     auto topLay = new QHBoxLayout(topRow); topLay->setContentsMargins(0,0,0,0);
+    topLay->setSpacing(kInlineRowSpacing);
     topLay->addWidget(d->modelCombo, 1);
     topLay->addWidget(d->resetBtn);
     form->addRow(tr("当前模型："), topRow);
@@ -242,24 +280,33 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     form->addRow(tr("当前语言："), d->languageCombo);
 
     d->tabStack->addWidget(d->basic);
-    d->tabs->addTab(tr("基本设置"));
+    d->tabs->addTab(
+        tr("基本设置"),
+        QIcon(appResourcePath(QStringLiteral("icons/settings-basic.svg")))
+    );
 
     // Model settings tab
     d->modelTab = new QWidget(d->tabStack);
-    auto vbox = new QVBoxLayout(d->modelTab);
-    auto row1 = new QHBoxLayout(); row1->setSpacing(6); row1->setContentsMargins(0,0,0,0);
+    auto modelForm = new QFormLayout(d->modelTab);
+    applyLeftAlignedFormLayout(modelForm);
+
+    auto modelNameRow = new QWidget(d->modelTab);
+    auto row1 = new QHBoxLayout(modelNameRow);
+    row1->setSpacing(kInlineRowSpacing);
+    row1->setContentsMargins(0,0,0,0);
     d->curModelName = new QLabel("", d->modelTab);
     d->openModelDirBtn = new EraButton(tr("打开当前模型路径"), d->modelTab);
     d->openModelDirBtn->setTone(EraButton::Tone::Link);
     d->modelNameTitle = new QLabel(tr("模型名称："), d->modelTab);
-    row1->addWidget(d->modelNameTitle);
     row1->addWidget(d->curModelName, 1);
     row1->addWidget(d->openModelDirBtn);
-    vbox->addLayout(row1);
+    modelForm->addRow(d->modelNameTitle, modelNameRow);
 
-    auto wmRow = new QHBoxLayout(); wmRow->setSpacing(6); wmRow->setContentsMargins(0,0,0,0);
+    auto wmRowWidget = new QWidget(d->modelTab);
+    auto wmRow = new QHBoxLayout(wmRowWidget);
+    wmRow->setSpacing(kInlineRowSpacing);
+    wmRow->setContentsMargins(0,0,0,0);
     d->watermarkTitle = new QLabel(tr("去除水印："), d->modelTab);
-    wmRow->addWidget(d->watermarkTitle);
     d->wmFileLabel = new QLabel(tr("无"), d->modelTab);
     d->wmFileLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     d->wmChooseBtn = new EraButton(tr("选择文件"), d->modelTab);
@@ -269,7 +316,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     wmRow->addWidget(d->wmFileLabel, 1);
     wmRow->addWidget(d->wmChooseBtn);
     wmRow->addWidget(d->wmClearBtn);
-    vbox->addLayout(wmRow);
+    modelForm->addRow(d->watermarkTitle, wmRowWidget);
 
     d->chkBreath  = new EraSwitch(tr("自动呼吸"), d->modelTab);
     d->chkBlink   = new EraSwitch(tr("自动眨眼"), d->modelTab);
@@ -284,7 +331,8 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     auto mkInlineTipRow = [this](EraSwitch* chk, const QString& tip, QLabel** outTip){
         QWidget* row = new QWidget(d->modelTab);
         auto lay = new QHBoxLayout(row);
-        lay->setContentsMargins(0,0,0,0); lay->setSpacing(4);
+        lay->setContentsMargins(0,0,0,0);
+        lay->setSpacing(kInlineRowSpacing);
         chk->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
         lay->addWidget(chk);
         lay->addWidget(new QLabel(" ", row));
@@ -297,20 +345,23 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         return row;
     };
 
-    vbox->addWidget(mkInlineTipRow(d->chkBreath,  tr("让角色在静止时也会轻微起伏（身体角度/呼吸参数）。开启视线跟踪时，自动呼吸不再影响头部；关闭后恢复。关闭本项后参数会复位。"), &d->tipBreath));
-    vbox->addWidget(mkInlineTipRow(d->chkBlink,   tr("自动眨眼并保留更自然的间隔与瞬目效果。关闭后眼部相关参数复位。"), &d->tipBlink));
-    vbox->addWidget(mkInlineTipRow(d->chkGaze,    tr("眼球、头部与身体随鼠标方向轻微转动，远距离时幅度会衰减。默认关闭；开启后将屏蔽自动呼吸对头部的影响。关闭后恢复眼球微动策略。"), &d->tipGaze));
-    vbox->addWidget(mkInlineTipRow(d->chkPhysics, tr("根据模型 physics3.json 的配置驱动物理（如头发/衣物摆动）。关闭后复位受影响参数。"), &d->tipPhysics));
-    vbox->addStretch(1);
+    modelForm->addRow(mkInlineTipRow(d->chkBreath,  tr("让角色在静止时也会轻微起伏（身体角度/呼吸参数）。开启视线跟踪时，自动呼吸不再影响头部；关闭后恢复。关闭本项后参数会复位。"), &d->tipBreath));
+    modelForm->addRow(mkInlineTipRow(d->chkBlink,   tr("自动眨眼并保留更自然的间隔与瞬目效果。关闭后眼部相关参数复位。"), &d->tipBlink));
+    modelForm->addRow(mkInlineTipRow(d->chkGaze,    tr("眼球、头部与身体随鼠标方向轻微转动，远距离时幅度会衰减。默认关闭；开启后将屏蔽自动呼吸对头部的影响。关闭后恢复眼球微动策略。"), &d->tipGaze));
+    modelForm->addRow(mkInlineTipRow(d->chkPhysics, tr("根据模型 physics3.json 的配置驱动物理（如头发/衣物摆动）。关闭后复位受影响参数。"), &d->tipPhysics));
+    modelForm->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
     d->tabStack->addWidget(d->modelTab);
-    d->tabs->addTab(tr("模型设置"));
+    d->tabs->addTab(
+        tr("模型设置"),
+        QIcon(appResourcePath(QStringLiteral("icons/settings-model.svg")))
+    );
 
     // ---- AI tab ----
     d->aiTab = new QWidget(d->tabStack);
     {
-        auto lay = new QVBoxLayout(d->aiTab);
-        auto form2 = new QFormLayout();
+        auto form2 = new QFormLayout(d->aiTab);
         d->aiForm = form2;
+        applyLeftAlignedFormLayout(form2);
 
         d->aiBaseUrl = new EraLineEdit(SettingsManager::instance().aiBaseUrl(), d->aiTab);
         d->aiBaseUrl->setFixedHeight(26);
@@ -329,7 +380,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             QWidget* w = new QWidget(parent);
             auto hl = new QHBoxLayout(w);
             hl->setContentsMargins(0,0,0,0);
-            hl->setSpacing(2);
+            hl->setSpacing(kInlineRowSpacing);
             hl->addStretch(1);
             hl->addWidget(new QLabel(" ", w));
             auto tipLbl = new QLabel(QString::fromUtf8("ⓘ"), w);
@@ -344,7 +395,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             QWidget* row = new QWidget(d->aiTab);
             auto hl = new QHBoxLayout(row);
             hl->setContentsMargins(0,0,0,0);
-            hl->setSpacing(6);
+            hl->setSpacing(kInlineRowSpacing);
             hl->addWidget(field, 1);
             hl->addWidget(mkInlineInfo(tip, row, outTip));
             form2->addRow(label, row);
@@ -393,7 +444,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             QWidget* row = new QWidget(d->aiTab);
             auto hl = new QHBoxLayout(row);
             hl->setContentsMargins(0,0,0,0);
-            hl->setSpacing(6);
+            hl->setSpacing(kInlineRowSpacing);
             hl->addWidget(d->aiSystemPrompt, 1);
             hl->addWidget(mkInlineInfo(
                 tr(
@@ -413,7 +464,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             QWidget* row = new QWidget(d->aiTab);
             auto hl = new QHBoxLayout(row);
             hl->setContentsMargins(0,0,0,0);
-            hl->setSpacing(6);
+            hl->setSpacing(kInlineRowSpacing);
             hl->addWidget(d->aiStream);
             hl->addWidget(mkInlineInfo(
                 tr(
@@ -484,8 +535,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             &d->tipTtsVoice
         );
 
-        lay->addLayout(form2);
-        lay->addStretch(1);
+        form2->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
 
         // hot update
         connect(d->aiBaseUrl, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setAiBaseUrl(t); });
@@ -500,12 +550,16 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         connect(d->ttsVoice, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsVoice(t); });
     }
     d->tabStack->addWidget(d->aiTab);
-    d->tabs->addTab(tr("AI设置"));
+    d->tabs->addTab(
+        tr("AI设置"),
+        QIcon(appResourcePath(QStringLiteral("icons/settings-ai.svg")))
+    );
 
     // Advanced tab
     d->advancedTab = new QWidget(d->tabStack);
     auto advLay = new QFormLayout(d->advancedTab);
     d->advancedForm = advLay;
+    applyLeftAlignedFormLayout(advLay);
     d->texCapCombo = new EraComboBox(d->advancedTab); d->texCapCombo->addItems({"4096","3072","2048","1024"});
     {
         int cur = SettingsManager::instance().textureMaxDim();
@@ -580,6 +634,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     d->cleanupRowWidget = cleanupRow;
     auto cleanupLay = new QHBoxLayout(cleanupRow);
     cleanupLay->setContentsMargins(0, 0, 0, 0);
+    cleanupLay->setSpacing(kInlineRowSpacing);
     auto btnClearCache = new EraButton(tr("清除缓存"), cleanupRow);
     btnClearCache->setTone(EraButton::Tone::Warning);
     auto btnClearChats = new EraButton(tr("清除所有对话历史"), cleanupRow);
@@ -593,7 +648,10 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
 
     advLay->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
     d->tabStack->addWidget(d->advancedTab);
-    d->tabs->addTab(tr("高级设置"));
+    d->tabs->addTab(
+        tr("高级设置"),
+        QIcon(appResourcePath(QStringLiteral("icons/settings-advanced.svg")))
+    );
 
     auto confirm = [this](const QString& title, const QString& text) -> bool {
         auto ret = QMessageBox::question(this, title, text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
@@ -971,6 +1029,37 @@ bool SettingsWindow::event(QEvent* e)
             };
             relocalizeComboDefaults(d->screenCombo);
             relocalizeComboDefaults(d->audioOutCombo);
+
+            // Recalculate layout after retranslation and shrink back if content got narrower.
+            auto shrinkWindowForLanguage = [this]{
+                if (!d || !d->central) return;
+                if (isMaximized() || isFullScreen()) return;
+
+                if (auto* lay = d->central->layout()) {
+                    lay->invalidate();
+                    lay->activate();
+                }
+
+                const int currentWidth = width();
+                const int minBaseWidth = 520;
+                int targetWidth = qMax(minBaseWidth, minimumSizeHint().width());
+
+                // Fallback for zh locales where delayed size hint updates can miss the shrink.
+                const QString langCode = SettingsManager::instance().currentLanguage();
+                if (langCode.startsWith(QStringLiteral("zh"), Qt::CaseInsensitive)
+                    && targetWidth >= currentWidth
+                    && currentWidth > minBaseWidth)
+                {
+                    targetWidth = minBaseWidth;
+                }
+
+                if (currentWidth > targetWidth) {
+                    resize(targetWidth, height());
+                }
+            };
+
+            QTimer::singleShot(0, this, shrinkWindowForLanguage);
+            QTimer::singleShot(30, this, shrinkWindowForLanguage);
         }
     }
     return QMainWindow::event(e);
