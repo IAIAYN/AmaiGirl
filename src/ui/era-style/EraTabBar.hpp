@@ -51,6 +51,7 @@ private:
 
     void init();
     void applyOrientationGeometry();
+    int verticalTabHeight() const;
     TabGeom tabGeomAt(int index) const;
     int tabAtPos(int px) const;
     void animateIndicatorTo(int index);

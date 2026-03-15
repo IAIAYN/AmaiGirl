@@ -11,9 +11,12 @@
 
 namespace {
 constexpr int kTabPaddingH = 14;
-constexpr int kBarHeight   = 38;
+constexpr int kHorizontalBarHeight = 38;
+constexpr int kVerticalTabMinHeight = 50;
+constexpr int kVerticalTabExtraPadding = 20;
 constexpr int kIndicatorH  = 2;
 constexpr int kSepH        = 1;
+constexpr int kVerticalDividerW = 1;
 constexpr int kAnimMs      = 330;
 constexpr int kVerticalBarMinWidth = 112;
 }
@@ -108,12 +111,13 @@ QSize EraTabBar::sizeHint() const
     if (m_orientation == Orientation::Vertical)
     {
         const QFontMetrics fm(font());
+        const int tabH = verticalTabHeight();
         int maxW = 0;
         for (const QString& label : m_labels)
             maxW = qMax(maxW, fm.horizontalAdvance(label) + kTabPaddingH * 2);
 
-        const int width = qMax(maxW + kIndicatorH + kSepH, kVerticalBarMinWidth);
-        const int height = qMax(kBarHeight, m_labels.size() * kBarHeight);
+        const int width = qMax(maxW + kIndicatorH + kVerticalDividerW, kVerticalBarMinWidth);
+        const int height = qMax(tabH, m_labels.size() * tabH);
         return QSize(width, height);
     }
 
@@ -121,15 +125,15 @@ QSize EraTabBar::sizeHint() const
     const QFontMetrics fm(font());
     for (const QString& label : m_labels)
         totalW += fm.horizontalAdvance(label) + kTabPaddingH * 2;
-    return QSize(qMax(totalW, 80), kBarHeight);
+    return QSize(qMax(totalW, 80), kHorizontalBarHeight);
 }
 
 QSize EraTabBar::minimumSizeHint() const
 {
     if (m_orientation == Orientation::Vertical)
-        return QSize(sizeHint().width(), kBarHeight);
+        return QSize(sizeHint().width(), verticalTabHeight());
 
-    return QSize(80, kBarHeight);
+    return QSize(80, kHorizontalBarHeight);
 }
 
 void EraTabBar::paintEvent(QPaintEvent* event)
@@ -141,45 +145,58 @@ void EraTabBar::paintEvent(QPaintEvent* event)
 
     const int W = width();
     const int H = height();
+    const EraStyleColor::ThemePalette& pal = EraStyleColor::themePalette();
 
     painter.setPen(Qt::NoPen);
-    painter.setBrush(EraStyleColor::SecondaryBorder);
     if (m_orientation == Orientation::Vertical)
-        painter.drawRect(W - kSepH, 0, kSepH, H);
+    {
+        painter.fillRect(QRect(W - kVerticalDividerW, 0, kVerticalDividerW, H), pal.tabDivider);
+    }
     else
+    {
+        painter.setBrush(pal.tabDivider);
         painter.drawRect(0, H - kSepH, W, kSepH);
+    }
 
-    // Tab 文字
+    // Tab labels
     for (int i = 0; i < m_labels.size(); ++i)
     {
         const TabGeom g = tabGeomAt(i);
         const QRect tabRect =
             m_orientation == Orientation::Vertical
-                ? QRect(0, g.x, W - kSepH - kIndicatorH, g.width)
+                ? QRect(0, g.x, qMax(1, W - kVerticalDividerW - kIndicatorH), g.width)
                 : QRect(g.x, 0, g.width, H - kSepH - kIndicatorH);
 
         const bool isActive  = (i == m_currentIndex);
         const bool isHovered = (i == m_hoveredIndex) && !isActive;
 
-        QColor textColor;
+        if (isActive || isHovered)
+        {
+            const QRect bgRect =
+                m_orientation == Orientation::Vertical
+                    ? tabRect.adjusted(8, 6, -8, -6)
+                    : tabRect.adjusted(6, 4, -6, -4);
+            painter.setBrush(isActive ? pal.tabActiveBackground : pal.tabHoverBackground);
+            painter.drawRoundedRect(bgRect, 8.0, 8.0);
+        }
+
+        QColor textColor = pal.tabTextIdle;
         if (isActive)
-            textColor = EraStyleColor::Link;
+            textColor = pal.tabTextActive;
         else if (isHovered)
-              textColor = EraStyleColor::SubordinateText;
-        else
-              textColor = EraStyleColor::AuxiliaryText;
+            textColor = pal.tabTextHover;
 
         painter.setPen(textColor);
         painter.setFont(font());
         painter.drawText(tabRect, Qt::AlignCenter, m_labels.at(i));
     }
 
-    // 下标指示线
+    // Active indicator
     painter.setPen(Qt::NoPen);
-    painter.setBrush(EraStyleColor::Link);
+    painter.setBrush(pal.tabIndicator);
     if (m_orientation == Orientation::Vertical)
     {
-        const int indX = W - kSepH - kIndicatorH;
+        const int indX = W - kVerticalDividerW - kIndicatorH;
         painter.drawRoundedRect(QRectF(indX, m_indicatorX, kIndicatorH, m_indicatorW), 1.0, 1.0);
     }
     else
@@ -278,20 +295,27 @@ void EraTabBar::applyOrientationGeometry()
         setMinimumWidth(0);
         setMaximumWidth(QWIDGETSIZE_MAX);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        setFixedHeight(kBarHeight);
+        setFixedHeight(kHorizontalBarHeight);
     }
+}
+
+int EraTabBar::verticalTabHeight() const
+{
+    const QFontMetrics fm(font());
+    return qMax(kVerticalTabMinHeight, fm.height() + kVerticalTabExtraPadding);
 }
 
 EraTabBar::TabGeom EraTabBar::tabGeomAt(int index) const
 {
     if (m_orientation == Orientation::Vertical)
     {
+        const int tabH = verticalTabHeight();
         int y = 0;
         for (int i = 0; i < m_labels.size(); ++i)
         {
             if (i == index)
-                return {y, kBarHeight};
-            y += kBarHeight;
+                return {y, tabH};
+            y += tabH;
         }
         return {0, 0};
     }
@@ -312,12 +336,13 @@ int EraTabBar::tabAtPos(int px) const
 {
     if (m_orientation == Orientation::Vertical)
     {
+        const int tabH = verticalTabHeight();
         int y = 0;
         for (int i = 0; i < m_labels.size(); ++i)
         {
-            if (px >= y && px < y + kBarHeight)
+            if (px >= y && px < y + tabH)
                 return i;
-            y += kBarHeight;
+            y += tabH;
         }
         return -1;
     }

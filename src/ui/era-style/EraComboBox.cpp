@@ -112,13 +112,13 @@ void EraComboBox::paintEvent(QPaintEvent* event)
     QRectF rectF = rect();
     rectF.adjust(0.75, 0.75, -0.75, -0.75);
 
-    const bool dark = EraStyleColor::isDark();
+    const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
 
     painter.setPen(Qt::NoPen);
     if (!isEnabled())
-        painter.setBrush(dark ? EraStyleColor::DarkSurfaceSubtle : EraStyleColor::BasicGray);
+        painter.setBrush(t.inputBackgroundDisabled);
     else
-        painter.setBrush(dark ? EraStyleColor::DarkSurface : EraStyleColor::BasicWhite);
+        painter.setBrush(t.inputBackground);
     painter.drawRoundedRect(rectF, kRadius, kRadius);
 
     painter.setPen(QPen(m_borderColor, kBorderWidth));
@@ -129,11 +129,11 @@ void EraComboBox::paintEvent(QPaintEvent* event)
     const QString text = hasCurrent ? currentText() : placeholderText();
     QColor textColor;
     if (!isEnabled())
-        textColor = dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText;
+        textColor = t.textDisabled;
     else if (hasCurrent)
-        textColor = dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText;
+        textColor = t.textPrimary;
     else
-        textColor = dark ? EraStyleColor::DarkAuxiliaryText : EraStyleColor::AuxiliaryText;
+        textColor = t.textMuted;
     painter.setPen(textColor);
     painter.setFont(font());
 
@@ -157,8 +157,8 @@ void EraComboBox::paintEvent(QPaintEvent* event)
     }
 
     const QColor arrowColor = !isEnabled()
-        ? (dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText)
-        : (dark ? EraStyleColor::DarkSubordinateText : EraStyleColor::AuxiliaryText);
+        ? t.textDisabled
+        : t.textSecondary;
     painter.setPen(QPen(arrowColor, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.drawPath(arrowPath);
 }
@@ -273,13 +273,14 @@ void EraComboBox::init()
 
 void EraComboBox::updateColors(bool animated)
 {
-    QColor target = EraStyleColor::PrimaryBorder;
+    const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
+    QColor target = t.borderPrimary;
     if (!isEnabled())
-        target = EraStyleColor::SecondaryBorder;
+        target = t.borderSecondary;
     else if (hasFocus() || (view() && view()->isVisible()))
-        target = EraStyleColor::Link;
+        target = t.accent;
     else if (m_hovered)
-        target = EraStyleColor::LinkHover;
+        target = t.accentHover;
 
     animateTo(target, animated);
 }
@@ -311,6 +312,7 @@ void EraComboBox::refreshPopupStyle()
         return;
 
     m_refreshingPopupStyle = true;
+    const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
     view()->window()->setAttribute(Qt::WA_MacShowFocusRect, false);
     const QString popupStyleSheet = QStringLiteral(
         "QListView {"
@@ -335,12 +337,12 @@ void EraComboBox::refreshPopupStyle()
         " color: %2;"
         " }"
     )
-        .arg(toRgba(EraStyleColor::isDark() ? EraStyleColor::DarkPopup : EraStyleColor::BasicWhite))
-        .arg(toRgba(EraStyleColor::isDark() ? EraStyleColor::DarkMainText : EraStyleColor::MainText))
-        .arg(toRgba(EraStyleColor::isDark() ? EraStyleColor::DarkSecondaryBorder : EraStyleColor::SecondaryBorder))
+        .arg(toRgba(t.popupBackground))
+        .arg(toRgba(t.textPrimary))
+        .arg(toRgba(t.borderSecondary))
         .arg(kRadius)
         .arg(kPopupItemHeight - 10)
-        .arg(toRgba(EraStyleColor::isDark() ? EraStyleColor::DarkHoverFill : EraStyleColor::BasicGray));
+        .arg(toRgba(t.hoverBackground));
 
     if (m_lastPopupStyleSheet != popupStyleSheet)
     {

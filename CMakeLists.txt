@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
 project(AmaiGirl LANGUAGES CXX)
 
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
 if(WIN32 AND NOT MSVC)
     message(FATAL_ERROR
         "Windows builds currently require MSVC (Visual Studio 2022 / v143 or newer). "
@@ -365,6 +369,25 @@ set(UI_SOURCES
     src/ui/ChatWindow.hpp
     src/ui/ChatWindow.cpp
 )
+
+if(APPLE)
+    list(APPEND UI_SOURCES
+        src/ui/era-style/EraMacWindowTheme.hpp
+        src/ui/era-style/EraMacWindowTheme.mm
+    )
+endif()
+
+if(WIN32)
+    list(APPEND UI_SOURCES
+        src/ui/era-style/EraWinWindowTheme.cpp
+    )
+endif()
+
+if(UNIX AND NOT APPLE)
+    list(APPEND UI_SOURCES
+        src/ui/era-style/EraLinuxWindowTheme.cpp
+    )
+endif()
 set(COMMON_SOURCES
     src/common/Utils.hpp
     src/common/Utils.cpp
@@ -444,6 +467,10 @@ target_link_libraries(AmaiGirl PRIVATE
     Qt6::Multimedia
     Live2DCubismCore
 )
+
+if(WIN32)
+    target_link_libraries(AmaiGirl PRIVATE dwmapi)
+endif()
 
 # macOS specifics
 if(APPLE)

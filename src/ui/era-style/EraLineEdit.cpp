@@ -97,31 +97,31 @@ void EraLineEdit::updateColors()
         return;
     m_updatingColors = true;
 
-    const bool dark = EraStyleColor::isDark();
+    const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
 
     if (!isEnabled())
     {
-        m_borderColor = dark ? EraStyleColor::DarkSecondaryBorder : EraStyleColor::PrimaryBorder;
-        m_textColor = dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText;
-        m_placeholderColor = dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText;
+        m_borderColor = t.borderSecondary;
+        m_textColor = t.textDisabled;
+        m_placeholderColor = t.textDisabled;
     }
     else if (hasFocus())
     {
-        m_borderColor = EraStyleColor::LinkClick;
-        m_textColor = dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText;
-        m_placeholderColor = dark ? EraStyleColor::DarkAuxiliaryText : EraStyleColor::AuxiliaryText;
+        m_borderColor = t.accentPressed;
+        m_textColor = t.textPrimary;
+        m_placeholderColor = t.textMuted;
     }
     else if (m_hovered)
     {
-        m_borderColor = EraStyleColor::LinkHover;
-        m_textColor = dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText;
-        m_placeholderColor = dark ? EraStyleColor::DarkAuxiliaryText : EraStyleColor::AuxiliaryText;
+        m_borderColor = t.accentHover;
+        m_textColor = t.textPrimary;
+        m_placeholderColor = t.textMuted;
     }
     else
     {
-        m_borderColor = dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::PrimaryBorder;
-        m_textColor = dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText;
-        m_placeholderColor = dark ? EraStyleColor::DarkAuxiliaryText : EraStyleColor::AuxiliaryText;
+        m_borderColor = t.borderPrimary;
+        m_textColor = t.textPrimary;
+        m_placeholderColor = t.textMuted;
     }
 
     QPalette palette = this->palette();
@@ -129,11 +129,7 @@ void EraLineEdit::updateColors()
     palette.setColor(QPalette::PlaceholderText, m_placeholderColor);
     setPalette(palette);
 
-    const QColor bgColor = [&]() -> QColor {
-        if (!isEnabled())
-            return dark ? EraStyleColor::DarkSurfaceSubtle : EraStyleColor::BasicGray;
-        return dark ? EraStyleColor::DarkSurface : EraStyleColor::BasicWhite;
-    }();
+    const QColor bgColor = !isEnabled() ? t.inputBackgroundDisabled : t.inputBackground;
 
     const QString styleSheet = QStringLiteral(
         "QLineEdit {"

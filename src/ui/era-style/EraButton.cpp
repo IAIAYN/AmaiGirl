@@ -136,6 +136,7 @@ void EraButton::init()
 void EraButton::updateTargetState(bool animated)
 {
     const Palette pal = paletteForTone();
+    const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
 
     QColor targetBorder;
     QColor targetText;
@@ -143,9 +144,9 @@ void EraButton::updateTargetState(bool animated)
 
     if (!isEnabled())
     {
-        targetBorder = EraStyleColor::SecondaryBorder;
-        targetText = EraStyleColor::DisabledText;
-        targetBackground = EraStyleColor::BasicGray;
+        targetBorder = t.borderSecondary;
+        targetText = t.textDisabled;
+        targetBackground = t.inputBackgroundDisabled;
     }
     else if (m_pressed && m_hovered)
     {
@@ -200,39 +201,40 @@ void EraButton::animateTo(const QColor& border, const QColor& text, const QColor
 
 EraButton::Palette EraButton::paletteForTone() const
 {
+    const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
+
     switch (m_tone)
     {
     case Tone::Link:
-        return {EraStyleColor::Link, EraStyleColor::LinkHover, EraStyleColor::LinkClick,
-            EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
-             EraStyleColor::Link, EraStyleColor::LinkHover, EraStyleColor::LinkClick};
+        return {t.accent, t.accentHover, t.accentPressed,
+            t.onAccentText, t.onAccentText, t.onAccentText, t.textDisabled,
+            t.accent, t.accentHover, t.accentPressed};
     case Tone::Success:
-        return {EraStyleColor::Success, EraStyleColor::SuccessHover, EraStyleColor::SuccessClick,
-             EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
-              EraStyleColor::Success, EraStyleColor::SuccessHover, EraStyleColor::SuccessClick};
+        return {t.success, t.successHover, t.successPressed,
+            t.onAccentText, t.onAccentText, t.onAccentText, t.textDisabled,
+            t.success, t.successHover, t.successPressed};
     case Tone::Warning:
-        return {EraStyleColor::Warning, EraStyleColor::WarningHover, EraStyleColor::WarningClick,
-             EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
-              EraStyleColor::Warning, EraStyleColor::WarningHover, EraStyleColor::WarningClick};
+        return {t.warning, t.warningHover, t.warningPressed,
+            t.onAccentText, t.onAccentText, t.onAccentText, t.textDisabled,
+            t.warning, t.warningHover, t.warningPressed};
     case Tone::Danger:
-        return {EraStyleColor::Danger, EraStyleColor::DangerHover, EraStyleColor::DangerClick,
-            EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
-             EraStyleColor::Danger, EraStyleColor::DangerHover, EraStyleColor::DangerClick};
+        return {t.danger, t.dangerHover, t.dangerPressed,
+            t.onAccentText, t.onAccentText, t.onAccentText, t.textDisabled,
+            t.danger, t.dangerHover, t.dangerPressed};
     case Tone::Info:
-        return {EraStyleColor::Info, EraStyleColor::InfoHover, EraStyleColor::InfoClick,
-            EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::BasicWhite, EraStyleColor::DisabledText,
-             EraStyleColor::Info, EraStyleColor::InfoHover, EraStyleColor::InfoClick};
+        return {t.info, t.infoHover, t.infoPressed,
+            t.onAccentText, t.onAccentText, t.onAccentText, t.textDisabled,
+            t.info, t.infoHover, t.infoPressed};
     case Tone::Neutral:
     default: {
-        const bool dark = EraStyleColor::isDark();
-        return {dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::PrimaryBorder,
-            EraStyleColor::LinkHover, EraStyleColor::LinkClick,
-            dark ? EraStyleColor::DarkMainText : EraStyleColor::SubordinateText,
-            EraStyleColor::LinkHover, EraStyleColor::LinkClick,
-            dark ? EraStyleColor::DarkDisabledText : EraStyleColor::DisabledText,
-            dark ? EraStyleColor::DarkSurface : EraStyleColor::BasicWhite,
-            dark ? EraStyleColor::DarkHoverFill : EraStyleColor::BasicWhite,
-            dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::BasicWhite};
+        return {t.borderPrimary,
+            t.accentHover, t.accentPressed,
+            t.textSecondary,
+            t.accentHover, t.accentPressed,
+            t.textDisabled,
+            t.inputBackground,
+            t.hoverBackground,
+            t.panelRaised};
     }
     }
 }

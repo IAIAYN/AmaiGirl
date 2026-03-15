@@ -25,11 +25,25 @@
 #include <QPen>
 #include <QScreen>
 #include <QLayout>
+#include <QWidget>
+
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+#include "ui/era-style/EraMacWindowTheme.hpp"
+#endif
+
+namespace EraStyle
+{
+    // Keep a local declaration so static analyzers always see the symbol.
+    void syncNativeWindowTheme(QWidget* widget);
+}
 
 namespace {
 constexpr auto kAppStyleInstalledProperty = "_amaigirl_era_app_style_installed";
 constexpr auto kThemeSyncInstalledProperty = "_amaigirl_era_theme_sync_installed";
 constexpr auto kScrollBarHelperInstalledProperty = "_amaigirl_era_scrollbar_helper_installed";
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+constexpr auto kNativeWindowThemePendingProperty = "_amaigirl_native_window_theme_pending";
+#endif
 constexpr int kScrollBarHideDelayMs = 80;
 constexpr int kScrollBarFadeMs = 140;
 constexpr int kScrollBarExtent = 8;
@@ -46,6 +60,161 @@ bool isThemeRelatedEventType(QEvent::Type type)
         || type == QEvent::StyleChange
         || type == QEvent::ApplicationPaletteChange
         || type == QEvent::PaletteChange;
+}
+
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+bool isNativeWindowSyncEventType(QEvent::Type type)
+{
+    return type == QEvent::Show
+        || type == QEvent::WinIdChange
+        || type == QEvent::WindowStateChange;
+}
+
+void scheduleNativeWindowThemeSync(QApplication* app, QWidget* widget)
+{
+    if (!app || !widget || !widget->isWindow())
+        return;
+
+    if (widget->property(kNativeWindowThemePendingProperty).toBool())
+        return;
+
+    widget->setProperty(kNativeWindowThemePendingProperty, true);
+    QPointer<QWidget> guarded(widget);
+    QTimer::singleShot(0, app, [guarded] {
+        if (!guarded)
+            return;
+
+        guarded->setProperty(kNativeWindowThemePendingProperty, false);
+        EraStyle::syncNativeWindowTheme(guarded.data());
+    });
+}
+#endif
+
+QString toRgba(const QColor& color)
+{
+    return QStringLiteral("rgba(%1, %2, %3, %4)")
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .arg(QString::number(color.alphaF(), 'f', 3));
+}
+
+void repolishWidgetTree(QWidget* root)
+{
+    if (!root)
+        return;
+
+    QList<QWidget*> stack;
+    stack.push_back(root);
+
+    while (!stack.isEmpty())
+    {
+        QWidget* w = stack.takeLast();
+        if (!w)
+            continue;
+
+        if (QStyle* style = w->style())
+        {
+            style->unpolish(w);
+            style->polish(w);
+        }
+
+        if (auto* layout = w->layout())
+            layout->invalidate();
+
+        const auto children = w->children();
+        for (QObject* child : children)
+        {
+            if (auto* childWidget = qobject_cast<QWidget*>(child))
+                stack.push_back(childWidget);
+        }
+
+        w->updateGeometry();
+        w->update();
+    }
+}
+
+QString buildApplicationStyleSheet()
+{
+    const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
+    return QStringLiteral(
+        "QToolTip { background: transparent; border: none; color: transparent; }"
+        "QMainWindow, QDialog, QMessageBox { background: %1; color: %2; }"
+        "QStatusBar, QToolBar { background: %3; color: %2; border: none; }"
+        "QMenuBar { background: %3; color: %2; border-bottom: 1px solid %4; }"
+        "QMenuBar::item { background: transparent; padding: 4px 8px; }"
+        "QMenuBar::item:selected { background: %5; }"
+        "QMenu { background: %6; color: %2; border: 1px solid %4; padding: 4px; }"
+        "QMenu::item { padding: 6px 18px; border-radius: 4px; }"
+        "QMenu::item:selected { background: %5; color: %2; }"
+        "QMenu::separator { height: 1px; background: %4; margin: 4px 8px; }"
+        "QLabel { color: %2; background: transparent; }"
+        "QCheckBox, QRadioButton { color: %2; background: transparent; spacing: 6px; }"
+        "QCheckBox:disabled, QRadioButton:disabled, QLabel:disabled { color: %7; }"
+        "QGroupBox { background: %3; color: %2; border: 1px solid %4; border-radius: 6px; margin-top: 12px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: %8; }"
+        "QAbstractItemView { background: %9; color: %2; border: 1px solid %10;"
+        " selection-background-color: %11; selection-color: %12; }"
+        "QHeaderView::section { background: %3; color: %2; border: none; border-bottom: 1px solid %4;"
+        " border-right: 1px solid %4; padding: 4px 6px; }"
+        "QPushButton { background: %3; color: %2; border: 1px solid %10; border-radius: 4px; padding: 6px 12px; }"
+        "QPushButton:hover { background: %5; border-color: %13; }"
+        "QPushButton:pressed { background: %14; border-color: %13; }"
+        "QPushButton:disabled { background: %15; color: %7; border-color: %4; }"
+        "QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QDateTimeEdit {"
+        " background: %9; color: %2; border: 1px solid %10; border-radius: 4px;"
+        " selection-background-color: %11; selection-color: %12; }"
+        "QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled, QSpinBox:disabled,"
+        " QDoubleSpinBox:disabled, QDateTimeEdit:disabled { background: %15; color: %7; border-color: %4; }"
+        "QComboBox { background: %9; color: %2; border: 1px solid %10; border-radius: 4px; padding: 4px 8px; }"
+        "QComboBox:disabled { background: %15; color: %7; border-color: %4; }"
+        "QComboBox QAbstractItemView { background: %6; color: %2; border: 1px solid %10;"
+        " selection-background-color: %11; selection-color: %12; }"
+        "QTabWidget::pane { border: 1px solid %4; background: %3; }"
+        "QTabBar::tab { background: %3; color: %8; border: 1px solid %4; border-bottom: none;"
+        " padding: 6px 12px; margin-right: 2px; border-top-left-radius: 4px; border-top-right-radius: 4px; }"
+        "QTabBar::tab:selected { background: %9; color: %2; }"
+        "QTabBar::tab:hover:!selected { background: %5; color: %2; }"
+        "QScrollBar { background: transparent; border: none; }"
+        "QScrollBar:vertical { width: 8px; margin: 0px; }"
+        "QScrollBar:horizontal { height: 8px; margin: 0px; }"
+        "QScrollBar::groove:vertical { background: transparent; width: 0px; }"
+        "QScrollBar::groove:horizontal { background: transparent; height: 0px; }"
+        "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }"
+        "QScrollBar::add-line { height: 0px; width: 0px; border: none; }"
+        "QScrollBar::sub-line { height: 0px; width: 0px; border: none; }"
+        "QScrollBar::handle { background: transparent; }"
+    )
+        .arg(toRgba(t.windowBackground))
+        .arg(toRgba(t.textPrimary))
+        .arg(toRgba(t.panelBackground))
+        .arg(toRgba(t.divider))
+        .arg(toRgba(t.hoverBackground))
+        .arg(toRgba(t.popupBackground))
+        .arg(toRgba(t.textDisabled))
+        .arg(toRgba(t.textSecondary))
+        .arg(toRgba(t.inputBackground))
+        .arg(toRgba(t.borderPrimary))
+        .arg(toRgba(t.selectionBackground))
+        .arg(toRgba(t.selectionText))
+        .arg(toRgba(t.accent))
+        .arg(toRgba(t.accentPressed))
+        .arg(toRgba(t.inputBackgroundDisabled));
+}
+
+void applyApplicationTheme(QApplication& app)
+{
+    app.setPalette(EraStyleColor::applicationPalette());
+    app.setStyleSheet(buildApplicationStyleSheet());
+
+    const auto topLevels = app.topLevelWidgets();
+    for (QWidget* w : topLevels)
+    {
+        repolishWidgetTree(w);
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+        scheduleNativeWindowThemeSync(&app, w);
+#endif
+    }
 }
 
 class EraThemeSyncFilter final : public QObject
@@ -66,15 +235,24 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (watched == m_app && event && isThemeRelatedEventType(event->type()))
+        if (watched == m_app && event && !m_refreshing && isThemeRelatedEventType(event->type()))
             scheduleRefresh();
+
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+        if (event && isNativeWindowSyncEventType(event->type()))
+        {
+            if (auto* widget = qobject_cast<QWidget*>(watched))
+                scheduleNativeWindowThemeSync(m_app, widget);
+        }
+#endif
+
         return QObject::eventFilter(watched, event);
     }
 
 private:
     void scheduleRefresh()
     {
-        if (!m_app || m_refreshPending)
+        if (!m_app || m_refreshPending || m_refreshing)
             return;
 
         m_refreshPending = true;
@@ -89,53 +267,14 @@ private:
         if (!m_app)
             return;
 
-        const QString styleSheet = m_app->styleSheet();
-        m_app->setStyleSheet(QString());
-        m_app->setStyleSheet(styleSheet);
-
-        auto repolishWidgetTree = [](QWidget* root) {
-            if (!root)
-                return;
-
-            QList<QWidget*> stack;
-            stack.push_back(root);
-
-            while (!stack.isEmpty())
-            {
-                QWidget* w = stack.takeLast();
-                if (!w)
-                    continue;
-
-                if (QStyle* style = w->style())
-                {
-                    style->unpolish(w);
-                    style->polish(w);
-                }
-
-                if (auto* layout = w->layout())
-                    layout->invalidate();
-
-                const auto children = w->children();
-                for (QObject* child : children)
-                {
-                    if (auto* childWidget = qobject_cast<QWidget*>(child))
-                        stack.push_back(childWidget);
-                }
-
-                w->updateGeometry();
-                w->update();
-            }
-        };
-
-        const auto topLevels = m_app->topLevelWidgets();
-        for (QWidget* w : topLevels)
-        {
-            repolishWidgetTree(w);
-        }
+        m_refreshing = true;
+        applyApplicationTheme(*m_app);
+        m_refreshing = false;
     }
 
     QApplication* m_app{nullptr};
     bool m_refreshPending{false};
+    bool m_refreshing{false};
 };
 
 class EraToolTipWidget final : public QWidget
@@ -197,12 +336,12 @@ protected:
         painter.setRenderHint(QPainter::Antialiasing, true);
 
         const QRectF bgRect = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-        const bool dark = EraStyleColor::isDark();
-        painter.setBrush(dark ? EraStyleColor::DarkTooltipBackground : EraStyleColor::BasicWhite);
-        painter.setPen(QPen(dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::PrimaryBorder, 1.0));
+        const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
+        painter.setBrush(t.tooltipBackground);
+        painter.setPen(QPen(t.tooltipBorder, 1.0));
         painter.drawRoundedRect(bgRect, kToolTipRadius, kToolTipRadius);
 
-        painter.setPen(dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText);
+        painter.setPen(t.tooltipText);
         const QRect textRect = rect().adjusted(kPadH, kPadV, -kPadH, -kPadV);
         painter.drawText(textRect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, m_text);
     }
@@ -320,17 +459,18 @@ protected:
         if (handleRect.width() <= 1 || handleRect.height() <= 1)
             return;
 
+        const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
         qreal alpha = kHandleBaseAlpha;
-        QColor fill = EraStyleColor::AuxiliaryText;
+        QColor fill = t.scrollbarHandle;
         if (isSliderDown())
         {
             alpha = kHandlePressedAlpha;
-            fill = EraStyleColor::LinkClick;
+            fill = t.scrollbarHandlePressed;
         }
         else if ((option.state & QStyle::State_MouseOver) || underMouse())
         {
             alpha = kHandleHoverAlpha;
-            fill = EraStyleColor::LinkHover;
+            fill = t.scrollbarHandleHover;
         }
 
         fill.setAlphaF(std::clamp(alpha * m_opacity, 0.0, 1.0));
@@ -622,23 +762,7 @@ void installApplicationStyle(QApplication& app)
     if (app.property(kAppStyleInstalledProperty).toBool())
         return;
 
-    // Suppress native tooltip — EraToolTipFilter provides the custom rounded one.
-    QString styleSheet = app.styleSheet();
-    if (!styleSheet.isEmpty() && !styleSheet.endsWith(QLatin1Char('\n')))
-        styleSheet += QLatin1Char('\n');
-        styleSheet += QStringLiteral(
-            "QToolTip { background: transparent; border: none; color: transparent; }"
-        "QScrollBar { background: transparent; border: none; }"
-        "QScrollBar:vertical { width: 8px; margin: 0px; }"
-        "QScrollBar:horizontal { height: 8px; margin: 0px; }"
-            "QScrollBar::groove:vertical { background: transparent; width: 0px; }"
-            "QScrollBar::groove:horizontal { background: transparent; height: 0px; }"
-            "QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }"
-            "QScrollBar::add-line { height: 0px; width: 0px; border: none; }"
-            "QScrollBar::sub-line { height: 0px; width: 0px; border: none; }"
-            "QScrollBar::handle { background: transparent; }"
-        );
-    app.setStyleSheet(styleSheet);
+    applyApplicationTheme(app);
 
     app.installEventFilter(new EraToolTipFilter(&app));
     if (!app.property(kThemeSyncInstalledProperty).toBool())

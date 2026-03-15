@@ -159,8 +159,8 @@ public:
     {
         const bool dark = EraStyleColor::isDark();
         const QColor text = m_isUser
-            ? (dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText)
-            : EraStyleColor::BasicWhite;
+            ? EraStyleColor::BasicWhite
+            : (dark ? EraStyleColor::DarkMainText : EraStyleColor::MainText);
         m_text->setStyleSheet(QStringLiteral(
             "QTextBrowser{"
             "background:transparent; padding:0px; margin:0px; border:none; color:%1; }"
@@ -235,13 +235,13 @@ protected:
         const bool dark = EraStyleColor::isDark();
         if (m_isUser)
         {
-            bg = dark ? EraStyleColor::DarkSurface : EraStyleColor::BasicWhite;
-            border = dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::PrimaryBorder;
+            bg = EraStyleColor::Link;
+            border = EraStyleColor::LinkClick;
         }
         else
         {
-            bg = EraStyleColor::Link;
-            border = EraStyleColor::LinkClick;
+            bg = dark ? EraStyleColor::DarkSurface : EraStyleColor::BasicWhite;
+            border = dark ? EraStyleColor::DarkPrimaryBorder : EraStyleColor::PrimaryBorder;
         }
 
         p.setPen(QPen(border, 1.0));
