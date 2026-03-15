@@ -160,7 +160,7 @@ After configuration, AI replies can trigger voice playback. If playback fails, t
 - Windows build/portable package resource path: `<executable_dir>/res`
 - Linux build/install resource path: `<executable_dir>/res` or `../share/AmaiGirl/res`
 - Windows config path: `%APPDATA%/IAIAYN/AmaiGirl/Configs`
-- Windows chats/cache path: `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Chats` and `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Cache`
+- Windows chats/cache path: `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Chats` and `%LOCALAPPDATA%/IAIAYN/AmaiGirl/.Cache`
 - License files are available under the `licenses` directory
 
 ## Development
