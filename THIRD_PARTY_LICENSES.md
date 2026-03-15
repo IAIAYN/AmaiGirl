@@ -21,6 +21,7 @@
   - Qt6::OpenGLWidgets
   - Qt6::Network
   - Qt6::Multimedia
+  - Qt6::Svg
 - **许可证模型**：开源使用通常基于 LGPL v3（本项目暂未使用基于 GPL 的模块/组件）。
 - **上游许可证信息**：
   - https://www.qt.io/development/open-source-lgpl-obligations

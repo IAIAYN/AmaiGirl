@@ -16,21 +16,21 @@ AmaiGirl aims to become a cross-platform native AI desktop assistant. The curren
 
 - Build environment: Xcode 15 (macOS 14 SDK) or newer
 - Build tools: CMake + Ninja + Clang
-- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia)
+- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg)
 
 #### Windows
 
 - Recommended environment: Windows 10/11 (x86_64)
 - Build tools: Visual Studio 2022 (MSVC v143) or newer, or CMake + Ninja inside the matching MSVC developer environment
 - MinGW/GCC is not supported at the moment because the Live2D Cubism Windows libraries used by this repository are built for MSVC
-- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia), with `windeployqt` available
+- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg), with `windeployqt` available
 - Live2D: make sure `sdk/cubism/lib/windows/x86_64/<toolset>/` contains the matching MSVC toolset libraries `Live2DCubismCore_MD.lib` / `Live2DCubismCore_MDd.lib`
 
 #### Linux
 
 - Recommended environment: Wayland session (X11 can be used as fallback backend)
 - Build tools: CMake + Ninja + GCC/Clang
-- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia)
+- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg)
 - Optional packaging tools (AppImage): `linuxdeploy`, `appimagetool`
 
 ### 2. **Live2D SDK (Important, must be downloaded manually)**

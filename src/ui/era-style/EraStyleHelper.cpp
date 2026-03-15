@@ -47,6 +47,7 @@ constexpr qreal kHandleBaseAlpha = 0.360;
 constexpr qreal kHandleHoverAlpha = 0.520;
 constexpr qreal kHandlePressedAlpha = 0.640;
 constexpr int kToolTipRadius = 8;
+constexpr int kChatComposerRadius = 18;
 
 bool isThemeRelatedEventType(QEvent::Type type)
 {
@@ -131,18 +132,24 @@ void repolishWidgetTree(QWidget* root)
 QString buildApplicationStyleSheet()
 {
     const EraStyleColor::ThemePalette& t = EraStyleColor::themePalette();
+    const QColor composerCardBackground = EraStyleColor::isDark() ? t.panelRaised : t.panelBackground;
+    const QColor composerCardBorder = EraStyleColor::isDark() ? t.borderPrimary : t.borderSecondary;
     return QStringLiteral(
         "QToolTip { background: transparent; border: none; color: transparent; }"
         "QMainWindow, QDialog, QMessageBox { background: %1; color: %2; }"
+        "QWidget#chatCentral { background: %1; }"
         "QStatusBar, QToolBar { background: %3; color: %2; border: none; }"
         "QMenuBar { background: %3; color: %2; border-bottom: 1px solid %4; }"
         "QMenuBar::item { background: transparent; padding: 4px 8px; }"
         "QMenuBar::item:selected { background: %5; }"
-        "QMenu { background: %6; color: %2; border: 1px solid %4; padding: 4px; }"
-        "QMenu::item { padding: 6px 18px; border-radius: 4px; }"
+        "QMenu { background: %6; color: %2; border: 1px solid %4; border-radius: 8px; padding: 4px; }"
+        "QMenu::item { padding: 6px 18px 6px 12px; border-radius: 4px; }"
         "QMenu::item:selected { background: %5; color: %2; }"
+        "QMenu::item:disabled { color: %7; background: transparent; }"
+        "QMenu::indicator { width: 0px; height: 0px; }"
         "QMenu::separator { height: 1px; background: %4; margin: 4px 8px; }"
         "QLabel { color: %2; background: transparent; }"
+        "QLabel a, QLabel a:focus, QLabel a:active, QLabel a:visited { text-decoration: none; outline: none; }"
         "QCheckBox, QRadioButton { color: %2; background: transparent; spacing: 6px; }"
         "QCheckBox:disabled, QRadioButton:disabled, QLabel:disabled { color: %7; }"
         "QGroupBox { background: %3; color: %2; border: 1px solid %4; border-radius: 6px; margin-top: 12px; }"
@@ -178,6 +185,8 @@ QString buildApplicationStyleSheet()
         "QScrollBar::add-line { height: 0px; width: 0px; border: none; }"
         "QScrollBar::sub-line { height: 0px; width: 0px; border: none; }"
         "QScrollBar::handle { background: transparent; }"
+        "QWidget#chatComposerCard { background: %16; border: 1px solid %17; border-radius: %18px; }"
+        "QLabel#chatComposerCountLabel { background: transparent; color: %8; font-size: 12px; }"
     )
         .arg(toRgba(t.windowBackground))
         .arg(toRgba(t.textPrimary))
@@ -193,7 +202,10 @@ QString buildApplicationStyleSheet()
         .arg(toRgba(t.selectionText))
         .arg(toRgba(t.accent))
         .arg(toRgba(t.accentPressed))
-        .arg(toRgba(t.inputBackgroundDisabled));
+        .arg(toRgba(t.inputBackgroundDisabled))
+        .arg(toRgba(composerCardBackground))
+        .arg(toRgba(composerCardBorder))
+        .arg(kChatComposerRadius);
 }
 
 void applyApplicationTheme(QApplication& app)

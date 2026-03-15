@@ -2,12 +2,15 @@
 
 #include <QWidget>
 #include <QStringList>
+#include <QIcon>
+#include <QVector>
 
 class QVariantAnimation;
 class QEnterEvent;
 class QEvent;
 class QMouseEvent;
 class QPaintEvent;
+class QFontMetrics;
 
 class EraTabBar : public QWidget
 {
@@ -22,7 +25,9 @@ public:
     explicit EraTabBar(QWidget* parent = nullptr);
 
     void addTab(const QString& label);
+    void addTab(const QString& label, const QIcon& icon);
     void setTabText(int index, const QString& label);
+    void setTabIcon(int index, const QIcon& icon);
     void setCurrentIndex(int index);
     void setOrientation(Orientation orientation);
     Orientation orientation() const { return m_orientation; }
@@ -52,11 +57,13 @@ private:
     void init();
     void applyOrientationGeometry();
     int verticalTabHeight() const;
+    int tabContentWidthAt(int index, const QFontMetrics& fm) const;
     TabGeom tabGeomAt(int index) const;
     int tabAtPos(int px) const;
     void animateIndicatorTo(int index);
 
     QStringList m_labels;
+    QVector<QIcon> m_icons;
     int m_currentIndex{0};
     int m_hoveredIndex{-1};
 

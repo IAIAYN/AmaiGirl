@@ -224,7 +224,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Qt6
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Network Multimedia Svg)
 
 # Live2D Cubism Core SDK
 set(CUBISM_SDK_DIR "${CMAKE_SOURCE_DIR}/sdk/cubism")
@@ -348,6 +348,8 @@ set(UI_SOURCES
     src/ui/era-style/EraStyleColor.hpp
     src/ui/era-style/EraStyleHelper.hpp
     src/ui/era-style/EraStyleHelper.cpp
+    src/ui/era-style/EraChatWidgets.hpp
+    src/ui/era-style/EraChatWidgets.cpp
     src/ui/era-style/EraButton.hpp
     src/ui/era-style/EraButton.cpp
     src/ui/era-style/EraTextEdit.hpp
@@ -465,6 +467,7 @@ target_link_libraries(AmaiGirl PRIVATE
     Qt6::OpenGLWidgets
     Qt6::Network
     Qt6::Multimedia
+    Qt6::Svg
     Live2DCubismCore
 )
 

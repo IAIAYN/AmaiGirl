@@ -22,6 +22,7 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QDebug>
+#include <QIcon>
 #include "ui/era-style/EraButton.hpp"
 #include <QFileDialog>
 #include <QMessageBox>
@@ -279,7 +280,10 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     form->addRow(tr("当前语言："), d->languageCombo);
 
     d->tabStack->addWidget(d->basic);
-    d->tabs->addTab(tr("基本设置"));
+    d->tabs->addTab(
+        tr("基本设置"),
+        QIcon(appResourcePath(QStringLiteral("icons/settings-basic.svg")))
+    );
 
     // Model settings tab
     d->modelTab = new QWidget(d->tabStack);
@@ -347,7 +351,10 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     modelForm->addRow(mkInlineTipRow(d->chkPhysics, tr("根据模型 physics3.json 的配置驱动物理（如头发/衣物摆动）。关闭后复位受影响参数。"), &d->tipPhysics));
     modelForm->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
     d->tabStack->addWidget(d->modelTab);
-    d->tabs->addTab(tr("模型设置"));
+    d->tabs->addTab(
+        tr("模型设置"),
+        QIcon(appResourcePath(QStringLiteral("icons/settings-model.svg")))
+    );
 
     // ---- AI tab ----
     d->aiTab = new QWidget(d->tabStack);
@@ -543,7 +550,10 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         connect(d->ttsVoice, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsVoice(t); });
     }
     d->tabStack->addWidget(d->aiTab);
-    d->tabs->addTab(tr("AI设置"));
+    d->tabs->addTab(
+        tr("AI设置"),
+        QIcon(appResourcePath(QStringLiteral("icons/settings-ai.svg")))
+    );
 
     // Advanced tab
     d->advancedTab = new QWidget(d->tabStack);
@@ -638,7 +648,10 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
 
     advLay->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
     d->tabStack->addWidget(d->advancedTab);
-    d->tabs->addTab(tr("高级设置"));
+    d->tabs->addTab(
+        tr("高级设置"),
+        QIcon(appResourcePath(QStringLiteral("icons/settings-advanced.svg")))
+    );
 
     auto confirm = [this](const QString& title, const QString& text) -> bool {
         auto ret = QMessageBox::question(this, title, text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);

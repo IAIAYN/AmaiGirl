@@ -21,6 +21,7 @@ This document lists third-party components used by this project and their licens
   - Qt6::OpenGLWidgets
   - Qt6::Network
   - Qt6::Multimedia
+  - Qt6::Svg
 - **License model**: Open-source usage in this project is typically under LGPL v3 (this project is not currently using GPL-based modules/components).
 - **Upstream license information**:
   - https://www.qt.io/development/open-source-lgpl-obligations

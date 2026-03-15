@@ -8,9 +8,15 @@
 #include <QMouseEvent>
 #include <QFontMetrics>
 #include <QEasingCurve>
+#include <QPixmap>
+#include <QImage>
 
 namespace {
 constexpr int kTabPaddingH = 14;
+constexpr int kTabIconSize = 18;
+constexpr int kTabIconGap = 8;
+constexpr int kVerticalContentInsetL = 11;
+constexpr int kVerticalContentInsetR = 20;
 constexpr int kHorizontalBarHeight = 38;
 constexpr int kVerticalTabMinHeight = 50;
 constexpr int kVerticalTabExtraPadding = 20;
@@ -19,6 +25,30 @@ constexpr int kSepH        = 1;
 constexpr int kVerticalDividerW = 1;
 constexpr int kAnimMs      = 330;
 constexpr int kVerticalBarMinWidth = 112;
+
+QPixmap tintedIconPixmap(const QIcon& icon, const QSize& logicalSize, const QColor& tint, qreal dpr)
+{
+    if (icon.isNull())
+        return {};
+
+    const QSize deviceSize(
+        qMax(1, qRound(logicalSize.width() * dpr)),
+        qMax(1, qRound(logicalSize.height() * dpr))
+    );
+
+    QPixmap base = icon.pixmap(deviceSize);
+    if (base.isNull())
+        return {};
+
+    base.setDevicePixelRatio(dpr);
+    QImage image = base.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+
+    QPainter imagePainter(&image);
+    imagePainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    imagePainter.fillRect(image.rect(), tint);
+
+    return QPixmap::fromImage(image);
+}
 } // namespace
 
 EraTabBar::EraTabBar(QWidget* parent)
@@ -29,7 +59,13 @@ EraTabBar::EraTabBar(QWidget* parent)
 
 void EraTabBar::addTab(const QString& label)
 {
+    addTab(label, QIcon());
+}
+
+void EraTabBar::addTab(const QString& label, const QIcon& icon)
+{
     m_labels.append(label);
+    m_icons.append(icon);
 
     if (m_labels.size() == 1)
     {
@@ -63,6 +99,25 @@ void EraTabBar::setTabText(int index, const QString& label)
         m_targetX    = g.x;
         m_targetW    = g.width;
     }
+
+    if (m_orientation == Orientation::Vertical)
+    {
+        applyOrientationGeometry();
+        updateGeometry();
+    }
+
+    update();
+}
+
+void EraTabBar::setTabIcon(int index, const QIcon& icon)
+{
+    if (index < 0 || index >= m_labels.size())
+        return;
+
+    if (m_icons.size() < m_labels.size())
+        m_icons.resize(m_labels.size());
+
+    m_icons[index] = icon;
 
     if (m_orientation == Orientation::Vertical)
     {
@@ -112,19 +167,30 @@ QSize EraTabBar::sizeHint() const
     {
         const QFontMetrics fm(font());
         const int tabH = verticalTabHeight();
-        int maxW = 0;
-        for (const QString& label : m_labels)
-            maxW = qMax(maxW, fm.horizontalAdvance(label) + kTabPaddingH * 2);
+        int maxTextW = 0;
+        bool hasAnyIcon = false;
+        for (int i = 0; i < m_labels.size(); ++i)
+        {
+            maxTextW = qMax(maxTextW, fm.horizontalAdvance(m_labels.at(i)));
+            if (i < m_icons.size() && !m_icons.at(i).isNull())
+                hasAnyIcon = true;
+        }
 
-        const int width = qMax(maxW + kIndicatorH + kVerticalDividerW, kVerticalBarMinWidth);
+        const int iconSlotW = hasAnyIcon ? (kTabIconSize + kTabIconGap) : 0;
+        const int maxW = maxTextW + iconSlotW;
+
+        const int width = qMax(
+            maxW + kVerticalContentInsetL + kVerticalContentInsetR + kIndicatorH + kVerticalDividerW,
+            kVerticalBarMinWidth
+        );
         const int height = qMax(tabH, m_labels.size() * tabH);
         return QSize(width, height);
     }
 
     int totalW = 0;
     const QFontMetrics fm(font());
-    for (const QString& label : m_labels)
-        totalW += fm.horizontalAdvance(label) + kTabPaddingH * 2;
+    for (int i = 0; i < m_labels.size(); ++i)
+        totalW += tabContentWidthAt(i, fm) + kTabPaddingH * 2;
     return QSize(qMax(totalW, 80), kHorizontalBarHeight);
 }
 
@@ -158,6 +224,16 @@ void EraTabBar::paintEvent(QPaintEvent* event)
         painter.drawRect(0, H - kSepH, W, kSepH);
     }
 
+    const QFontMetrics fm(font());
+    bool hasAnyIcon = false;
+    for (int i = 0; i < m_labels.size(); ++i)
+    {
+        if (i < m_icons.size() && !m_icons.at(i).isNull())
+            hasAnyIcon = true;
+    }
+
+    const int alignedIconSlotW = hasAnyIcon ? (kTabIconSize + kTabIconGap) : 0;
+
     // Tab labels
     for (int i = 0; i < m_labels.size(); ++i)
     {
@@ -174,7 +250,7 @@ void EraTabBar::paintEvent(QPaintEvent* event)
         {
             const QRect bgRect =
                 m_orientation == Orientation::Vertical
-                    ? tabRect.adjusted(8, 6, -8, -6)
+                    ? tabRect.adjusted(6, 6, -10, -6)
                     : tabRect.adjusted(6, 4, -6, -4);
             painter.setBrush(isActive ? pal.tabActiveBackground : pal.tabHoverBackground);
             painter.drawRoundedRect(bgRect, 8.0, 8.0);
@@ -186,9 +262,62 @@ void EraTabBar::paintEvent(QPaintEvent* event)
         else if (isHovered)
             textColor = pal.tabTextHover;
 
+        const int textW = fm.horizontalAdvance(m_labels.at(i));
+        const bool hasIcon = i < m_icons.size() && !m_icons.at(i).isNull();
+        const int iconSize = hasIcon ? qMin(kTabIconSize, qMax(12, tabRect.height() - 14)) : 0;
+        const int iconSlotW =
+            (m_orientation == Orientation::Vertical)
+                ? alignedIconSlotW
+                : (hasIcon ? iconSize + kTabIconGap : 0);
+
+        const int contentW = iconSlotW + textW;
+        int contentX = 0;
+        if (m_orientation == Orientation::Vertical)
+        {
+            // File-manager style: fixed left inset + fixed icon column.
+            contentX = tabRect.x() + kVerticalContentInsetL;
+        }
+        else
+        {
+            contentX = tabRect.x() + (tabRect.width() - contentW) / 2;
+        }
+
         painter.setPen(textColor);
         painter.setFont(font());
-        painter.drawText(tabRect, Qt::AlignCenter, m_labels.at(i));
+
+        if (hasIcon)
+        {
+            const int iconX =
+                (m_orientation == Orientation::Vertical)
+                    ? contentX + qMax(0, (kTabIconSize - iconSize) / 2)
+                    : contentX;
+            const QRect iconRect(iconX, tabRect.y() + (tabRect.height() - iconSize) / 2, iconSize, iconSize);
+            const qreal dpr = painter.device()->devicePixelRatioF();
+            const QPixmap pix = tintedIconPixmap(m_icons.at(i), QSize(iconSize, iconSize), textColor, dpr);
+            if (!pix.isNull())
+            {
+                painter.drawPixmap(iconRect, pix);
+            }
+            else
+            {
+                m_icons.at(i).paint(&painter, iconRect, Qt::AlignCenter, QIcon::Normal, QIcon::Off);
+            }
+        }
+
+        contentX += iconSlotW;
+
+        if (m_orientation == Orientation::Vertical)
+        {
+            const int textAvailW = qMax(0, tabRect.right() - kVerticalContentInsetR - contentX + 1);
+            const QString elided = fm.elidedText(m_labels.at(i), Qt::ElideRight, textAvailW);
+            const QRect textRect(contentX, tabRect.y(), textAvailW, tabRect.height());
+            painter.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, elided);
+        }
+        else
+        {
+            const QRect textRect(contentX, tabRect.y(), textW, tabRect.height());
+            painter.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, m_labels.at(i));
+        }
     }
 
     // Active indicator
@@ -302,7 +431,18 @@ void EraTabBar::applyOrientationGeometry()
 int EraTabBar::verticalTabHeight() const
 {
     const QFontMetrics fm(font());
-    return qMax(kVerticalTabMinHeight, fm.height() + kVerticalTabExtraPadding);
+    return qMax(kVerticalTabMinHeight, qMax(fm.height() + kVerticalTabExtraPadding, kTabIconSize + 16));
+}
+
+int EraTabBar::tabContentWidthAt(int index, const QFontMetrics& fm) const
+{
+    if (index < 0 || index >= m_labels.size())
+        return 0;
+
+    const int textW = fm.horizontalAdvance(m_labels.at(index));
+    const bool hasIcon = index < m_icons.size() && !m_icons.at(index).isNull();
+    const int iconW = hasIcon ? (kTabIconSize + kTabIconGap) : 0;
+    return textW + iconW;
 }
 
 EraTabBar::TabGeom EraTabBar::tabGeomAt(int index) const
@@ -324,7 +464,7 @@ EraTabBar::TabGeom EraTabBar::tabGeomAt(int index) const
     int x = 0;
     for (int i = 0; i < m_labels.size(); ++i)
     {
-        const int w = fm.horizontalAdvance(m_labels.at(i)) + kTabPaddingH * 2;
+        const int w = tabContentWidthAt(i, fm) + kTabPaddingH * 2;
         if (i == index)
             return {x, w};
         x += w;
@@ -351,7 +491,7 @@ int EraTabBar::tabAtPos(int px) const
     int x = 0;
     for (int i = 0; i < m_labels.size(); ++i)
     {
-        const int w = fm.horizontalAdvance(m_labels.at(i)) + kTabPaddingH * 2;
+        const int w = tabContentWidthAt(i, fm) + kTabPaddingH * 2;
         if (px >= x && px < x + w)
             return i;
         x += w;

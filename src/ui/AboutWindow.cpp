@@ -63,7 +63,6 @@ AboutWindow::AboutWindow(QWidget *parent) : QMainWindow(parent) {
 #if defined(Q_OS_MACOS)
     copyright->setAttribute(Qt::WA_MacShowFocusRect, false);
 #endif
-    copyright->setStyleSheet("a, a:focus, a:active { text-decoration: none; outline: none; }");
     copyright->setAlignment(Qt::AlignCenter);
     copyright->setFont(small);
 
