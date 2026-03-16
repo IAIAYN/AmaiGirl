@@ -1,4 +1,5 @@
 #include "ui/SettingsWindow.hpp"
+#include "app/Version.hpp"
 #include "common/SettingsManager.hpp"
 #include "common/Utils.hpp"
 #include <QStandardPaths>
@@ -13,6 +14,7 @@
 #include <QPalette>
 #include <QStackedWidget>
 #include <QVBoxLayout>
+#include <QGridLayout>
 #include "ui/theme/ThemeApi.hpp"
 #include "ui/theme/ThemeWidgets.hpp"
 #include <QHBoxLayout>
@@ -39,6 +41,7 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QLocale>
+#include <QStyleHints>
 #include <QtGlobal>
 
 #include <QtMultimedia/QMediaDevices>
@@ -74,6 +77,29 @@ constexpr int kFormRightPadding = 36;
 constexpr int kFormTopPadding = 12;
 constexpr int kFormBottomPadding = 16;
 constexpr int kInlineRowSpacing = 8;
+constexpr int kSidebarFooterSpacing = 10;
+constexpr int kSidebarThemeIconSize = 22;
+constexpr int kSidebarFooterTopPadding = 14;
+constexpr int kSidebarFooterBottomPadding = 12;
+constexpr int kSidebarFooterRightInset = 14;
+constexpr auto kReleasesPageUrl = "https://github.com/IAIAYN/AmaiGirl/releases";
+
+bool currentColorThemeIsDark(const QWidget* context)
+{
+    if (const QStyleHints* hints = QGuiApplication::styleHints())
+    {
+        const Qt::ColorScheme scheme = hints->colorScheme();
+        if (scheme == Qt::ColorScheme::Dark)
+            return true;
+        if (scheme == Qt::ColorScheme::Light)
+            return false;
+    }
+
+    const QPalette palette = context ? context->palette() : QApplication::palette();
+    const qreal avgLightness = (palette.color(QPalette::Window).lightnessF()
+        + palette.color(QPalette::Base).lightnessF()) * 0.5;
+    return avgLightness < 0.5;
+}
 } // namespace
 
 static void applyLeftAlignedFormLayout(QFormLayout* form)
@@ -91,7 +117,11 @@ static void applyLeftAlignedFormLayout(QFormLayout* form)
 
 class SettingsWindow::Impl {
 public:
+    QWidget* sidebar{nullptr};
     ThemeWidgets::TabBar*     tabs{nullptr};
+    QWidget* sidebarFooter{nullptr};
+    QLabel* themeSchemeIconLabel{nullptr};
+    QPushButton* versionLinkButton{nullptr};
     QStackedWidget* tabStack{nullptr};
     QWidget* basic{nullptr};
     QFormLayout* basicForm{nullptr};
@@ -196,7 +226,15 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     auto rootLay = new QHBoxLayout(d->central);
     rootLay->setContentsMargins(12,12,12,12);
     rootLay->setSpacing(0);
-    d->tabs = new ThemeWidgets::TabBar(d->central);
+
+    d->sidebar = new QWidget(d->central);
+    d->sidebar->setObjectName(QStringLiteral("settingsSidebar"));
+    auto sideLay = new QGridLayout(d->sidebar);
+    sideLay->setContentsMargins(0, 0, 0, 0);
+    sideLay->setHorizontalSpacing(0);
+    sideLay->setVerticalSpacing(0);
+
+    d->tabs = new ThemeWidgets::TabBar(d->sidebar);
     {
         QFont tabFont = d->tabs->font();
         if (tabFont.pointSizeF() > 0.0)
@@ -206,14 +244,49 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         d->tabs->setFont(tabFont);
     }
     d->tabs->setOrientation(ThemeWidgets::TabBar::Orientation::Vertical);
+
+    d->sidebarFooter = new QWidget(d->sidebar);
+    d->sidebarFooter->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+    auto footerLay = new QVBoxLayout(d->sidebarFooter);
+    footerLay->setContentsMargins(0, kSidebarFooterTopPadding, kSidebarFooterRightInset, kSidebarFooterBottomPadding);
+    footerLay->setSpacing(kSidebarFooterSpacing);
+
+    d->themeSchemeIconLabel = new QLabel(d->sidebarFooter);
+    d->themeSchemeIconLabel->setObjectName(QStringLiteral("settingsThemeSchemeIcon"));
+    d->themeSchemeIconLabel->setAlignment(Qt::AlignCenter);
+    d->themeSchemeIconLabel->setFixedSize(kSidebarThemeIconSize, kSidebarThemeIconSize);
+
+    d->versionLinkButton = new QPushButton(d->sidebarFooter);
+    d->versionLinkButton->setObjectName(QStringLiteral("settingsVersionLinkButton"));
+    d->versionLinkButton->setCursor(Qt::PointingHandCursor);
+    d->versionLinkButton->setFocusPolicy(Qt::NoFocus);
+    d->versionLinkButton->setFlat(true);
+    d->versionLinkButton->setText(QStringLiteral("v%1").arg(QString::fromLatin1(AMAI_GIRL_VERSION)));
+    d->versionLinkButton->setStyleSheet(QStringLiteral(
+        "QPushButton#settingsVersionLinkButton {"
+        " border: none; background: transparent; padding: 0px; text-decoration: none; }"
+        "QPushButton#settingsVersionLinkButton:pressed { background: transparent; }"
+    ));
+    connect(d->versionLinkButton, &QPushButton::clicked, this, [] {
+        QDesktopServices::openUrl(QUrl(QString::fromLatin1(kReleasesPageUrl)));
+    });
+
+    footerLay->addWidget(d->themeSchemeIconLabel, 0, Qt::AlignHCenter);
+    footerLay->addWidget(d->versionLinkButton, 0, Qt::AlignHCenter);
+
+    sideLay->addWidget(d->tabs, 0, 0);
+    sideLay->addWidget(d->sidebarFooter, 0, 0, Qt::AlignBottom);
+
     d->tabStack = new QStackedWidget(d->central);
-    rootLay->addWidget(d->tabs, 0);
+    rootLay->addWidget(d->sidebar, 0);
     rootLay->addWidget(d->tabStack, 1);
     connect(d->tabs, &ThemeWidgets::TabBar::currentChanged, this, [this](int index){
         d->tabStack->setCurrentIndex(index);
         if (auto* fw = QApplication::focusWidget()) fw->clearFocus();
         d->tabs->setFocus(Qt::OtherFocusReason);
     });
+
+    refreshSidebarThemeIndicator();
 
     // Basic tab
     d->basic = new QWidget(d->tabStack);
@@ -896,6 +969,32 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
 
 SettingsWindow::~SettingsWindow() = default;
 
+void SettingsWindow::refreshSidebarThemeIndicator()
+{
+    if (!d || !d->themeSchemeIconLabel)
+        return;
+
+    const Theme::IconToken token = currentColorThemeIsDark(this)
+        ? Theme::IconToken::ThemeDarkIndicator
+        : Theme::IconToken::ThemeLightIndicator;
+
+    const QIcon icon = Theme::themedIcon(token);
+    d->themeSchemeIconLabel->setPixmap(icon.pixmap(QSize(kSidebarThemeIconSize, kSidebarThemeIconSize)));
+
+    if (d->versionLinkButton)
+    {
+        const QColor normal = palette().color(QPalette::Text).lighter(140);
+        const QColor hover = palette().color(QPalette::Text);
+        d->versionLinkButton->setStyleSheet(QStringLiteral(
+            "QPushButton#settingsVersionLinkButton {"
+            " border: none; background: transparent; padding: 0px;"
+            " text-decoration: none; color: %1; }"
+            "QPushButton#settingsVersionLinkButton:hover { color: %2; }"
+            "QPushButton#settingsVersionLinkButton:pressed { background: transparent; color: %2; }"
+        ).arg(normal.name(QColor::HexArgb), hover.name(QColor::HexArgb)));
+    }
+}
+
 bool SettingsWindow::event(QEvent* e)
 {
     if (e->type() == QEvent::LanguageChange)
@@ -1095,6 +1194,8 @@ bool SettingsWindow::event(QEvent* e)
             if (d->tabs->count() > 2) d->tabs->setTabIcon(2, Theme::themedIcon(Theme::IconToken::SettingsAi));
             if (d->tabs->count() > 3) d->tabs->setTabIcon(3, Theme::themedIcon(Theme::IconToken::SettingsAdvanced));
         }
+
+        refreshSidebarThemeIndicator();
     }
 
     return QMainWindow::event(e);

@@ -30,6 +30,10 @@ QString eraIconRelativePath(Theme::IconToken token)
         return QStringLiteral("icons/era-style/settings-ai.svg");
     case Theme::IconToken::SettingsAdvanced:
         return QStringLiteral("icons/era-style/settings-advanced.svg");
+    case Theme::IconToken::ThemeLightIndicator:
+        return QStringLiteral("icons/era-style/theme-light.svg");
+    case Theme::IconToken::ThemeDarkIndicator:
+        return QStringLiteral("icons/era-style/theme-dark.svg");
     }
 
     return QStringLiteral("icons/era-style/chat-send.svg");
