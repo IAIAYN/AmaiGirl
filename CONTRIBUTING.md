@@ -180,7 +180,30 @@ CI 规则：
 - 禁止直接 push 到 `dev`
 - 要求 PR 合并并通过 CI 检查后才能进入 `dev`
 
-### 5. Pull Request 建议
+### 5. 主题扩展规范（Theme）
+
+- 配置语义：主题配置键统一使用 `theme`，由 `SettingsManager` 读写到运行时用户配置（例如用户目录下的 `Configs/config.json`）；不要新增或回退到 `themeMode`
+- 主题 ID 注册：
+   - 在 `Theme::availableThemeIds()` 中注册新主题 ID
+   - 在 `Theme::normalizeThemeId()`（及其底层实现）中补充规范化与兼容逻辑
+   - 若需变更默认主题，再同步调整 `SettingsManager` 的默认值
+- 主题应用分发：
+   - 在 `src/ui/theme/ThemeApi.cpp` 的 `installApplicationStyle()` / `applyTheme()` 中增加新主题分支
+   - 保持设置页切换后可热更新（无需重启）
+- SVG 图标规范：
+   - 主题独有 SVG 必须放在 `res/icons/<theme-id>/`，例如 `res/icons/era-style/`
+   - `Theme::IconToken` 的每个条目都必须在 `Theme::iconRelativePath()` 中有映射
+   - 不要将主题专属 SVG 继续放在 `res/icons/` 根目录
+- 业务层依赖约束：
+   - `ChatWindow`、`SettingsWindow` 等业务窗口应仅依赖主题抽象层（`src/ui/theme/ThemeApi.hpp` 与 `src/ui/theme/ThemeWidgets.hpp`）
+   - 禁止在业务窗口中直接 `#include` 具体主题实现目录（例如 `ui/era-style/*`）；新增主题能力应先经主题抽象层暴露
+- 验证清单（新增主题必做）：
+   - 在“当前主题”下拉中可见并可切换
+   - 切换主题后颜色与图标即时生效（热切换）
+   - 重启应用后主题保持为上次选择
+   - 缺失单个图标资源时有回退策略，且应用不崩溃
+
+### 6. Pull Request 建议
 
 提交 PR 时建议包含：
 
@@ -189,7 +212,7 @@ CI 规则：
 - 本地验证方式（如何复现/验证）
 - 若有 UI 变化，附截图或录屏
 
-### 6. 安全与合规注意事项
+### 7. 安全与合规注意事项
 
 - 严禁提交私密密钥（API Key、Token）
 - 模型素材可能受单独条款约束，提交前请确认许可

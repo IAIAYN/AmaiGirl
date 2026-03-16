@@ -345,6 +345,9 @@ set(ENGINE_SOURCES
     src/engine/PhysicsEngine.cpp
 )
 set(UI_SOURCES
+    src/ui/theme/ThemeApi.hpp
+    src/ui/theme/ThemeApi.cpp
+    src/ui/theme/ThemeWidgets.hpp
     src/ui/era-style/EraStyleColor.hpp
     src/ui/era-style/EraStyleHelper.hpp
     src/ui/era-style/EraStyleHelper.cpp

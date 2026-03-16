@@ -33,6 +33,7 @@
 
 namespace {
 constexpr auto kAppStyleInstalledProperty = "_amaigirl_era_app_style_installed";
+constexpr auto kCurrentThemeIdProperty = "_amaigirl_era_theme_id";
 constexpr auto kThemeSyncInstalledProperty = "_amaigirl_era_theme_sync_installed";
 constexpr auto kScrollBarHelperInstalledProperty = "_amaigirl_era_scrollbar_helper_installed";
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN32) || defined(Q_OS_LINUX)
@@ -48,6 +49,14 @@ constexpr qreal kHandleHoverAlpha = 0.520;
 constexpr qreal kHandlePressedAlpha = 0.640;
 constexpr int kToolTipRadius = 8;
 constexpr int kChatComposerRadius = 18;
+
+QString normalizeThemeIdImpl(const QString& themeId)
+{
+    QString id = themeId.trimmed().toLower();
+    if (id.isEmpty() || id == QStringLiteral("system"))
+        return QStringLiteral("era");
+    return id;
+}
 
 bool isThemeRelatedEventType(QEvent::Type type)
 {
@@ -763,20 +772,40 @@ private:
 
 namespace EraStyle
 {
-void installApplicationStyle(QApplication& app)
+QString normalizeThemeId(const QString& themeId)
 {
-    if (app.property(kAppStyleInstalledProperty).toBool())
-        return;
+    return normalizeThemeIdImpl(themeId);
+}
 
+QStringList availableThemeIds()
+{
+    return { QStringLiteral("era") };
+}
+
+void applyTheme(QApplication& app, const QString& themeId)
+{
+    const QString normalizedTheme = normalizeThemeIdImpl(themeId);
+    app.setProperty(kCurrentThemeIdProperty, normalizedTheme);
+
+    // Theme dispatcher hook.
+    // Currently only the built-in era style exists; future styles can branch here.
     applyApplicationTheme(app);
+}
 
-    app.installEventFilter(new EraToolTipFilter(&app));
-    if (!app.property(kThemeSyncInstalledProperty).toBool())
+void installApplicationStyle(QApplication& app, const QString& themeId)
+{
+    if (!app.property(kAppStyleInstalledProperty).toBool())
     {
-        app.installEventFilter(new EraThemeSyncFilter(&app));
-        app.setProperty(kThemeSyncInstalledProperty, true);
+        app.installEventFilter(new EraToolTipFilter(&app));
+        if (!app.property(kThemeSyncInstalledProperty).toBool())
+        {
+            app.installEventFilter(new EraThemeSyncFilter(&app));
+            app.setProperty(kThemeSyncInstalledProperty, true);
+        }
+        app.setProperty(kAppStyleInstalledProperty, true);
     }
-    app.setProperty(kAppStyleInstalledProperty, true);
+
+    applyTheme(app, themeId);
 }
 
 void installHoverScrollBars(QAbstractScrollArea* area, bool enableVertical, bool enableHorizontal)
