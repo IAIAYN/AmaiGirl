@@ -142,7 +142,7 @@ cmake -S . -B build -G Ninja \
 
 ### 4. Coding & Commit Guidelines
 
-- Do not develop directly on `dev`; branch from `dev` into feature branches: `feat/xxx` (for example `feat/windows/audio`, `feat/model-sync`)
+- Do not develop directly on `dev`; branch from `dev` using common prefixes such as `feat/xxx`, `fix/xxx`, `chore/xxx`, `docs/xxx`, `refactor/xxx`, `perf/xxx`, `test/xxx`, `build/xxx`, `ci/xxx`, `hotfix/xxx`, or `revert/xxx`
 - Avoid committing development work directly on `main`
 - Keep changes focused and minimal
 - Avoid mixing unrelated refactors in one PR
@@ -166,13 +166,13 @@ python3 scripts/check_platform_macro_style.py --root src --platform all
 
 CI policy:
 
-- All `feat/*` branches run macro-style checks
-- `feat/windows*` branches run Windows macro checks
-- `feat/linux*` branches run Linux macro checks
-- `feat/macos*` branches run macOS macro checks
-- Other `feat/xxx` branches (cross-platform features) run `--platform all`
-- PRs targeting `dev` must come from `feat/*`
-- PRs from `feat/windows*` / `feat/linux*` / `feat/macos*` to `dev` also run a "diff scope guard": C/C++ changes must stay inside the corresponding platform macro-guarded regions to avoid accidental shared-code edits
+- Branches prefixed with `feat/*`, `fix/*`, `chore/*`, `docs/*`, `refactor/*`, `perf/*`, `test/*`, `build/*`, `ci/*`, `hotfix/*`, and `revert/*` run macro-style checks
+- Branches with `/windows` in the branch name run Windows macro checks
+- Branches with `/linux` in the branch name run Linux macro checks
+- Branches with `/macos` in the branch name run macOS macro checks
+- Other branches with the allowed prefixes run `--platform all`
+- PRs targeting `dev` must come from one of the allowed prefixes above
+- PRs containing `/windows`, `/linux`, or `/macos` in the head branch name and targeting `dev` also run a "diff scope guard": C/C++ changes must stay inside the corresponding platform macro-guarded regions to avoid accidental shared-code edits
 - If exceptions are needed, add path-glob entries (one per line) to `.github/platform-diff-allowlist.txt` for the platform branch diff-scope guard
 
 Recommended repository protection settings:

@@ -142,7 +142,7 @@ cmake -S . -B build -G Ninja \
 
 ### 4. 代码与提交规范
 
-- 不要直接在 `dev` 上开发；请从 `dev` 派生功能分支进行开发：`feat/xxx`（例如 `feat/windows/audio`、`feat/model-sync`）
+- 不要直接在 `dev` 上开发；请从 `dev` 派生分支进行开发，推荐使用常见前缀：`feat/xxx`、`fix/xxx`、`chore/xxx`、`docs/xxx`、`refactor/xxx`、`perf/xxx`、`test/xxx`、`build/xxx`、`ci/xxx`、`hotfix/xxx`、`revert/xxx`
 - 不建议直接在 `main` 分支上进行开发提交
 - 尽量保持改动聚焦、最小化
 - 不要在同一 PR 中混入无关重构
@@ -166,13 +166,13 @@ python3 scripts/check_platform_macro_style.py --root src --platform all
 
 CI 规则：
 
-- 所有 `feat/*` 分支都会执行宏规范检查
-- `feat/windows*` 分支自动执行 Windows 宏规范检查
-- `feat/linux*` 分支自动执行 Linux 宏规范检查
-- `feat/macos*` 分支自动执行 macOS 宏规范检查
-- 其他 `feat/xxx`（全平台特性）自动执行 `--platform all` 全量检查
-- 目标分支为 `dev` 的 PR，来源分支必须是 `feat/*`
-- 对 `feat/windows*` / `feat/linux*` / `feat/macos*` 到 `dev` 的 PR，会额外执行“改动范围守卫”：C/C++ 改动必须落在对应平台宏保护块内，避免误改共享代码
+- 以 `feat/*`、`fix/*`、`chore/*`、`docs/*`、`refactor/*`、`perf/*`、`test/*`、`build/*`、`ci/*`、`hotfix/*`、`revert/*` 开头的分支都会执行宏规范检查
+- 分支名中带有 `/windows` 的分支自动执行 Windows 宏规范检查
+- 分支名中带有 `/linux` 的分支自动执行 Linux 宏规范检查
+- 分支名中带有 `/macos` 的分支自动执行 macOS 宏规范检查
+- 其他上述前缀分支自动执行 `--platform all` 全量检查
+- 目标分支为 `dev` 的 PR，来源分支必须是上述允许前缀之一
+- 对名称包含 `/windows` / `/linux` / `/macos` 且合并到 `dev` 的 PR，会额外执行“改动范围守卫”：C/C++ 改动必须落在对应平台宏保护块内，避免误改共享代码
 - 若确需例外文件，可在 `.github/platform-diff-allowlist.txt` 中按行添加路径 glob 白名单（仅用于平台分支改动范围守卫）
 
 推荐在仓库设置中开启分支保护：

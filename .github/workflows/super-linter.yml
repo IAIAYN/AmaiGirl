@@ -8,9 +8,35 @@ name: Lint Code Base
 
 on:
   push:
-    branches: [ "main", "dev", "feat/**" ]
+    branches:
+      - "main"
+      - "dev"
+      - "feat/**"
+      - "fix/**"
+      - "chore/**"
+      - "docs/**"
+      - "refactor/**"
+      - "perf/**"
+      - "test/**"
+      - "build/**"
+      - "ci/**"
+      - "hotfix/**"
+      - "revert/**"
   pull_request:
-    branches: [ "main", "dev", "feat/**" ]
+    branches:
+      - "main"
+      - "dev"
+      - "feat/**"
+      - "fix/**"
+      - "chore/**"
+      - "docs/**"
+      - "refactor/**"
+      - "perf/**"
+      - "test/**"
+      - "build/**"
+      - "ci/**"
+      - "hotfix/**"
+      - "revert/**"
 
 permissions:
   contents: read
@@ -22,9 +48,9 @@ jobs:
     if: >-
       github.event_name == 'pull_request' &&
       github.base_ref == 'dev' && (
-        startsWith(github.head_ref, 'feat/windows') ||
-        startsWith(github.head_ref, 'feat/linux') ||
-        startsWith(github.head_ref, 'feat/macos')
+        contains(github.head_ref, '/windows') ||
+        contains(github.head_ref, '/linux') ||
+        contains(github.head_ref, '/macos')
       )
     runs-on: ubuntu-latest
     steps:
@@ -39,11 +65,11 @@ jobs:
           HEAD_BRANCH: ${{ github.head_ref }}
         run: |
           set -euo pipefail
-          if [[ "$HEAD_BRANCH" == feat/windows* ]]; then
+          if [[ "$HEAD_BRANCH" == */windows* ]]; then
             PLATFORM="windows"
-          elif [[ "$HEAD_BRANCH" == feat/linux* ]]; then
+          elif [[ "$HEAD_BRANCH" == */linux* ]]; then
             PLATFORM="linux"
-          elif [[ "$HEAD_BRANCH" == feat/macos* ]]; then
+          elif [[ "$HEAD_BRANCH" == */macos* ]]; then
             PLATFORM="macos"
           else
             echo "Unsupported platform branch: $HEAD_BRANCH" >&2
@@ -72,16 +98,82 @@ jobs:
             feat/*)
               echo "Branch policy passed: $HEAD_BRANCH"
               ;;
+            fix/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
+            chore/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
+            docs/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
+            refactor/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
+            perf/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
+            test/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
+            build/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
+            ci/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
+            hotfix/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
+            revert/*)
+              echo "Branch policy passed: $HEAD_BRANCH"
+              ;;
             *)
-              echo "PR to dev must come from feature branches:" >&2
+              echo "PR to dev must come from one of allowed branch prefixes:" >&2
               echo "  - feat/xxx" >&2
+              echo "  - fix/xxx" >&2
+              echo "  - chore/xxx" >&2
+              echo "  - docs/xxx" >&2
+              echo "  - refactor/xxx" >&2
+              echo "  - perf/xxx" >&2
+              echo "  - test/xxx" >&2
+              echo "  - build/xxx" >&2
+              echo "  - ci/xxx" >&2
+              echo "  - hotfix/xxx" >&2
+              echo "  - revert/xxx" >&2
               echo "Current head branch: $HEAD_BRANCH" >&2
               exit 1
               ;;
           esac
 
   lint-platform-macro-style:
-    if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/')) || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/')) }}
+    if: >-
+      (github.event_name == 'push' && (
+        startsWith(github.ref, 'refs/heads/feat/') ||
+        startsWith(github.ref, 'refs/heads/fix/') ||
+        startsWith(github.ref, 'refs/heads/chore/') ||
+        startsWith(github.ref, 'refs/heads/docs/') ||
+        startsWith(github.ref, 'refs/heads/refactor/') ||
+        startsWith(github.ref, 'refs/heads/perf/') ||
+        startsWith(github.ref, 'refs/heads/test/') ||
+        startsWith(github.ref, 'refs/heads/build/') ||
+        startsWith(github.ref, 'refs/heads/ci/') ||
+        startsWith(github.ref, 'refs/heads/hotfix/') ||
+        startsWith(github.ref, 'refs/heads/revert/')
+      )) ||
+      (github.event_name == 'pull_request' && (
+        startsWith(github.head_ref, 'feat/') ||
+        startsWith(github.head_ref, 'fix/') ||
+        startsWith(github.head_ref, 'chore/') ||
+        startsWith(github.head_ref, 'docs/') ||
+        startsWith(github.head_ref, 'refactor/') ||
+        startsWith(github.head_ref, 'perf/') ||
+        startsWith(github.head_ref, 'test/') ||
+        startsWith(github.head_ref, 'build/') ||
+        startsWith(github.head_ref, 'ci/') ||
+        startsWith(github.head_ref, 'hotfix/') ||
+        startsWith(github.head_ref, 'revert/')
+      ))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -101,11 +193,11 @@ jobs:
             BRANCH="$REF_NAME"
           fi
 
-          if [[ "$BRANCH" == feat/windows* ]]; then
+          if [[ "$BRANCH" == */windows* ]]; then
             PLATFORM="windows"
-          elif [[ "$BRANCH" == feat/linux* ]]; then
+          elif [[ "$BRANCH" == */linux* ]]; then
             PLATFORM="linux"
-          elif [[ "$BRANCH" == feat/macos* ]]; then
+          elif [[ "$BRANCH" == */macos* ]]; then
             PLATFORM="macos"
           else
             PLATFORM="all"
