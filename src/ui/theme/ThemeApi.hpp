@@ -16,6 +16,8 @@ enum class IconToken
     SettingsModel,
     SettingsAi,
     SettingsAdvanced,
+    ThemeLightIndicator,
+    ThemeDarkIndicator,
 };
 
 QString normalizeThemeId(const QString& themeId);

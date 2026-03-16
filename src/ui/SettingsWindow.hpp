@@ -46,5 +46,6 @@ protected:
 
 private:
     class Impl; QScopedPointer<Impl> d;
+    void refreshSidebarThemeIndicator();
     void refreshModelList();
 };
