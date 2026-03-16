@@ -180,7 +180,30 @@ Recommended repository protection settings:
 - Block direct pushes to `dev`
 - Require pull requests and passing CI checks before merging into `dev`
 
-### 5. Pull Request Checklist
+### 5. Theme Extension Rules
+
+- Config semantics: use `theme` as the single theme key. This key is persisted by `SettingsManager` in runtime user configuration (for example, `Configs/config.json` under the user data directory), not in a versioned repository file; do not add or reintroduce `themeMode`
+- Theme ID registration:
+   - Register new IDs in `Theme::availableThemeIds()`
+   - Extend normalization/compat logic in `Theme::normalizeThemeId()` (and underlying implementation)
+   - If the project default theme changes, also update the default in `SettingsManager`
+- Theme apply dispatch:
+   - Add the new theme branch in `src/ui/theme/ThemeApi.cpp` for `installApplicationStyle()` / `applyTheme()`
+   - Keep runtime hot switching working from the settings window (no restart required)
+- SVG icon rules:
+   - Theme-specific SVG files must live under `res/icons/<theme-id>/`, for example `res/icons/era-style/`
+   - Every `Theme::IconToken` entry must have a mapping in `Theme::iconRelativePath()`
+   - Do not place theme-specific SVG files in the root `res/icons/` directory
+- Business-layer dependency rule:
+   - UI windows such as `ChatWindow` and `SettingsWindow` should depend only on the theme abstraction layer (`src/ui/theme/ThemeApi.hpp` and `src/ui/theme/ThemeWidgets.hpp`)
+   - Do not directly `#include` concrete theme implementation directories (for example, `ui/era-style/*`) in business window code; expose new theme capabilities through the abstraction layer first
+- Validation checklist for any new theme:
+   - Theme appears in the "Current Theme" dropdown and can be selected
+   - Colors and icons update immediately after switching (hot switch)
+   - Theme persists across app restart
+   - Missing single-icon resources have fallback behavior and do not crash the app
+
+### 6. Pull Request Checklist
 
 Please include:
 
@@ -189,7 +212,7 @@ Please include:
 - Local verification steps
 - Screenshots/recordings if UI behavior changed
 
-### 6. Security & Compliance Notes
+### 7. Security & Compliance Notes
 
 - Never commit secrets (API keys, tokens)
 - Model assets may have separate licenses; verify before submitting

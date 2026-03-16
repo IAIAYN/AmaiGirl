@@ -22,7 +22,8 @@
 #include <QTextEdit>
 #include <QTextOption>
 
-#include "ui/era-style/EraChatWidgets.hpp"
+#include "ui/theme/ThemeApi.hpp"
+#include "ui/theme/ThemeWidgets.hpp"
 
 namespace {
 
@@ -31,8 +32,8 @@ constexpr int kComposerMaxLines = 5;
 constexpr int kComposerRadius = 18;
 constexpr int kComposerSendButtonSize = 34;
 constexpr int kComposerSendIconSize = 18;
-constexpr int kComposerFooterControlSize = 22;
-constexpr int kComposerClearIconSize = 17;
+constexpr int kComposerFooterControlSize = 24;
+constexpr int kComposerClearIconSize = 19;
 constexpr qreal kComposerInputDocumentMargin = 3.0;
 
 QPixmap circleAvatar(const QPixmap& src, int logicalSize, qreal devicePixelRatio)
@@ -108,12 +109,12 @@ public:
         m_avatar->setFixedSize(32, 32);
         setAvatar(avatar);
 
-        m_bubbleBox = new EraChatBubbleBox(m_isUser, this);
+        m_bubbleBox = new ThemeWidgets::ChatBubbleBox(m_isUser, this);
         auto* bubbleLay = new QVBoxLayout(m_bubbleBox);
         bubbleLay->setContentsMargins(12, 8, 12, 8);
         bubbleLay->setSpacing(0);
 
-        m_text = new EraChatBubbleTextView(m_isUser, m_bubbleBox);
+        m_text = new ThemeWidgets::ChatBubbleTextView(m_isUser, m_bubbleBox);
         m_text->setText(text);
         updateBubbleTextStyle();
         bubbleLay->addWidget(m_text);
@@ -269,8 +270,8 @@ private:
 
     bool m_isUser{false};
     QLabel* m_avatar{nullptr};
-    EraChatBubbleBox* m_bubbleBox{nullptr};
-    EraChatBubbleTextView* m_text{nullptr};
+    ThemeWidgets::ChatBubbleBox* m_bubbleBox{nullptr};
+    ThemeWidgets::ChatBubbleTextView* m_text{nullptr};
     int m_maxBubbleWidth{360};
     int m_rowWidth{520};
 };
@@ -283,11 +284,11 @@ public:
     QString modelDir;
 
     QWidget* central{nullptr};
-    EraChatListWidget* list{nullptr};
+    ThemeWidgets::ChatListWidget* list{nullptr};
     QWidget* composerCard{nullptr};
-    EraChatComposerEdit* input{nullptr};
-    EraIconToolButton* sendBtn{nullptr};
-    EraIconToolButton* clearBtn{nullptr};
+    ThemeWidgets::ChatComposerEdit* input{nullptr};
+    ThemeWidgets::IconButton* sendBtn{nullptr};
+    ThemeWidgets::IconButton* clearBtn{nullptr};
     QLabel* countLabel{nullptr};
 
     QPixmap userAvatar;
@@ -482,7 +483,7 @@ ChatWindow::ChatWindow(QWidget* parent)
     root->setContentsMargins(12, 12, 12, 12);
     root->setSpacing(10);
 
-    d->list = new EraChatListWidget(d->central);
+    d->list = new ThemeWidgets::ChatListWidget(d->central);
     d->list->setSpacing(6);
     d->list->setUniformItemSizes(false);
     d->list->setSelectionMode(QAbstractItemView::NoSelection);
@@ -501,15 +502,15 @@ ChatWindow::ChatWindow(QWidget* parent)
     editorRow->setContentsMargins(0, 0, 0, 0);
     editorRow->setSpacing(10);
 
-    d->input = new EraChatComposerEdit(d->composerCard);
+    d->input = new ThemeWidgets::ChatComposerEdit(d->composerCard);
     d->input->document()->setDocumentMargin(kComposerInputDocumentMargin);
     d->input->setPlaceholderText(tr("输入消息... (Enter 发送 / Shift+Enter 换行)"));
-    d->sendBtn = new EraIconToolButton(d->composerCard);
-    d->sendBtn->setTone(EraIconToolButton::Tone::Accent);
+    d->sendBtn = new ThemeWidgets::IconButton(d->composerCard);
+    d->sendBtn->setTone(ThemeWidgets::IconButton::Tone::Accent);
     d->sendBtn->setIconLogicalSize(kComposerSendIconSize);
     d->sendBtn->setFixedSize(kComposerSendButtonSize, kComposerSendButtonSize);
     d->sendBtn->setToolTip(tr("发送"));
-    d->sendBtn->setIcon(QIcon(appResourcePath(QStringLiteral("icons/chat-send.svg"))));
+    d->sendBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatSend));
 
     editorRow->addWidget(d->input, 1);
     editorRow->addWidget(d->sendBtn, 0, Qt::AlignRight | Qt::AlignBottom);
@@ -519,18 +520,18 @@ ChatWindow::ChatWindow(QWidget* parent)
     footerRow->setContentsMargins(0, 0, 0, 0);
     footerRow->setSpacing(8);
 
-    d->clearBtn = new EraIconToolButton(d->composerCard);
-    d->clearBtn->setTone(EraIconToolButton::Tone::Ghost);
+    d->clearBtn = new ThemeWidgets::IconButton(d->composerCard);
+    d->clearBtn->setTone(ThemeWidgets::IconButton::Tone::Ghost);
     d->clearBtn->setIconLogicalSize(kComposerClearIconSize);
     d->clearBtn->setToolTip(tr("清除"));
     d->clearBtn->setFixedSize(kComposerFooterControlSize, kComposerFooterControlSize);
-    d->clearBtn->setIcon(QIcon(appResourcePath(QStringLiteral("icons/chat-clear.svg"))));
+    d->clearBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatClear));
 
     d->countLabel = new QLabel(QStringLiteral("0"), d->composerCard);
     d->countLabel->setObjectName(QStringLiteral("chatComposerCountLabel"));
     d->countLabel->setAlignment(Qt::AlignCenter);
     d->countLabel->setFixedSize(kComposerSendButtonSize, kComposerFooterControlSize);
-    d->countLabel->setContentsMargins(0, 1, 0, 0);
+    d->countLabel->setContentsMargins(0, 5, 0, 0);
 
     footerRow->addWidget(d->clearBtn, 0, Qt::AlignLeft | Qt::AlignVCenter);
     footerRow->addStretch(1);
@@ -575,8 +576,8 @@ ChatWindow::ChatWindow(QWidget* parent)
     };
 
     connect(d->sendBtn, &QToolButton::clicked, this, sendNow);
-    connect(d->input, &EraChatComposerEdit::sendRequested, this, sendNow);
-    connect(d->input, &EraChatComposerEdit::metricsChanged, this, [this] {
+    connect(d->input, &ThemeWidgets::ChatComposerEdit::sendRequested, this, sendNow);
+    connect(d->input, &ThemeWidgets::ChatComposerEdit::metricsChanged, this, [this] {
         if (!d) return;
         d->updateInputMetrics();
     });
@@ -823,6 +824,8 @@ bool ChatWindow::event(QEvent* e)
     {
         if (d)
         {
+            if (d->sendBtn) d->sendBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatSend));
+            if (d->clearBtn) d->clearBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatClear));
             if (d->list) d->list->viewport()->update();
             d->updateInputMetrics();
             d->scheduleRelayout(this);

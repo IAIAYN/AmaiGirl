@@ -23,7 +23,7 @@
 #include "ui/AboutWindow.hpp"
 #include "ai/ChatController.hpp"
 #include "ui/ChatWindow.hpp"
-#include "ui/era-style/EraStyleHelper.hpp"
+#include "ui/theme/ThemeApi.hpp"
 #include "common/Utils.hpp"
 #include <QEvent>
 #include <QWindow>
@@ -279,11 +279,11 @@ int main(int argc, char *argv[]) {
     QApplication::setApplicationDisplayName(QStringLiteral("AmaiGirl"));
     QCoreApplication::setOrganizationName(QStringLiteral("IAIAYN"));
     QApplication::setQuitOnLastWindowClosed(false);
-    EraStyle::installApplicationStyle(app);
 
     // Bootstrap settings and models
     SettingsManager::instance().load();
     SettingsManager::instance().bootstrap(QCoreApplication::applicationDirPath());
+    Theme::installApplicationStyle(app, SettingsManager::instance().theme());
 
     const QIcon appIcon(appResourcePath(QStringLiteral("icons/app-icon.png")));
     if (!appIcon.isNull()) {
@@ -519,6 +519,10 @@ int main(int argc, char *argv[]) {
                                      QObject::tr("提示"),
                                      QObject::tr("未找到对应语言包，已回退为内置中文文案。"));
         }
+    });
+
+    QObject::connect(settingsWnd, &SettingsWindow::themeChanged, &app, [&app](const QString& themeId){
+        Theme::applyTheme(app, themeId);
     });
 
     QObject::connect(settingsWnd, &SettingsWindow::requestLoadModel, [currentRenderer, chatCtl](const QString& json){
