@@ -30,7 +30,7 @@ The current version provides a usable baseline on macOS 13.0+, Windows 10/11 (x8
 
 ## Demo
 
-> Models shown in this demo are from bilibili creator [@菜菜爱吃饭ovo](https://space.bilibili.com/1851126283), non-commercial only, and are not included in this source repository or release app. Desktop wallpapers shown in demos are from the internet; please contact the maintainer if any infringement is involved.
+> Models shown in this demo are from bilibili creator [@菜菜爱吃饭ovo](https://space.bilibili.com/1851126283), non-commercial only, and are not included in this source repository or release app. Please contact the maintainer if any infringement is involved.
 
 ### Quick Preview
 
