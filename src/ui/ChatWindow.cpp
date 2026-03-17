@@ -18,6 +18,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QScrollBar>
+#include <QTimer>
 #include <QTextBrowser>
 #include <QTextEdit>
 #include <QTextOption>
@@ -68,6 +69,16 @@ QString firstPngInDir(const QString& dir)
     return files.front().absoluteFilePath();
 }
 
+bool hasVisibleCharacters(const QString& text)
+{
+    for (const QChar ch : text)
+    {
+        if (!ch.isSpace())
+            return true;
+    }
+    return false;
+}
+
 QJsonArray loadChatMessages(const QString& modelFolder)
 {
     QFile f(SettingsManager::instance().chatPathForModel(modelFolder));
@@ -98,6 +109,66 @@ class ChatMessageWidget final : public QWidget
 {
     Q_OBJECT
 public:
+    class TypingDotsWidget final : public QWidget
+    {
+    public:
+        explicit TypingDotsWidget(QWidget* parent = nullptr)
+            : QWidget(parent)
+        {
+            setFixedSize(30, 12);
+            m_timer.setInterval(220);
+            connect(&m_timer, &QTimer::timeout, this, [this] {
+                m_phase = (m_phase + 1) % 3;
+                update();
+            });
+        }
+
+        void setActive(bool active)
+        {
+            if (active)
+            {
+                if (!m_timer.isActive())
+                    m_timer.start();
+            }
+            else
+            {
+                if (m_timer.isActive())
+                    m_timer.stop();
+                m_phase = 0;
+                update();
+            }
+        }
+
+    protected:
+        void paintEvent(QPaintEvent* event) override
+        {
+            Q_UNUSED(event);
+
+            QPainter painter(this);
+            painter.setRenderHint(QPainter::Antialiasing, true);
+
+            const QColor base = palette().color(QPalette::Text);
+            const qreal radius = 2.2;
+            const qreal centerY = height() * 0.5;
+            const qreal startX = 7.0;
+            const qreal step = 8.0;
+
+            for (int i = 0; i < 3; ++i)
+            {
+                QColor c = base;
+                c.setAlphaF(i == m_phase ? 0.95 : 0.32);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(c);
+                const qreal cx = startX + i * step;
+                painter.drawEllipse(QPointF(cx, centerY), radius, radius);
+            }
+        }
+
+    private:
+        QTimer m_timer;
+        int m_phase{0};
+    };
+
     ChatMessageWidget(const QPixmap& avatar, const QString& text, bool isUser, QWidget* parent=nullptr)
         : QWidget(parent), m_isUser(isUser)
     {
@@ -117,6 +188,10 @@ public:
         m_text = new ThemeWidgets::ChatBubbleTextView(m_isUser, m_bubbleBox);
         m_text->setText(text);
         updateBubbleTextStyle();
+
+        m_typingDots = new TypingDotsWidget(this);
+        m_typingDots->setVisible(false);
+
         bubbleLay->addWidget(m_text);
         m_bubbleBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
@@ -130,6 +205,7 @@ public:
         {
             lay->addWidget(m_avatar, 0, Qt::AlignLeft | Qt::AlignTop);
             lay->addWidget(m_bubbleBox, 0, Qt::AlignLeft | Qt::AlignTop);
+            lay->addWidget(m_typingDots, 0, Qt::AlignLeft | Qt::AlignVCenter);
             lay->addStretch(1);
         }
 
@@ -168,6 +244,9 @@ public:
 
     void appendToken(const QString& t)
     {
+        if (m_waitingForResponse && hasVisibleCharacters(t))
+            setWaitingForResponse(false);
+
         m_text->moveCursor(QTextCursor::End);
         m_text->insertPlainText(t);
         m_text->moveCursor(QTextCursor::End);
@@ -179,9 +258,32 @@ public:
 
     void setContent(const QString& c)
     {
+        if (m_waitingForResponse && hasVisibleCharacters(c))
+            setWaitingForResponse(false);
+
         m_text->setText(c);
         updateBubbleTextStyle();
         syncTextSizeToContent();
+        updateGeometry();
+        update();
+    }
+
+    void setWaitingForResponse(bool waiting)
+    {
+        const bool normalized = waiting && !m_isUser;
+        if (m_waitingForResponse == normalized)
+            return;
+
+        m_waitingForResponse = normalized;
+        if (m_typingDots) {
+            m_typingDots->setActive(m_waitingForResponse);
+            m_typingDots->setVisible(m_waitingForResponse);
+        }
+        if (m_bubbleBox)
+            m_bubbleBox->setVisible(!m_waitingForResponse);
+        if (m_text)
+            m_text->setVisible(!m_waitingForResponse);
+
         updateGeometry();
         update();
     }
@@ -193,10 +295,15 @@ public:
 
     QSize sizeHint() const override
     {
-        // Height = max(avatar, text bubble) + paddings.
+        // Height = max(avatar, visible content) + paddings.
         const int rowTopBottom = 16;
-        const int bubbleH = m_bubbleBox ? m_bubbleBox->height() : 0;
-        const int h = qMax(32, bubbleH) + rowTopBottom;
+        int contentH = 0;
+        if (m_waitingForResponse && m_typingDots)
+            contentH = m_typingDots->sizeHint().height();
+        else if (m_bubbleBox)
+            contentH = m_bubbleBox->height();
+
+        const int h = qMax(32, contentH) + rowTopBottom;
         return { m_rowWidth, h };
     }
 
@@ -204,6 +311,22 @@ private:
     void syncTextSizeToContent()
     {
         if (!m_text) return;
+
+        if (m_waitingForResponse)
+        {
+            m_text->setVisible(false);
+            if (m_typingDots)
+                m_typingDots->setVisible(true);
+            if (m_bubbleBox)
+                m_bubbleBox->setVisible(false);
+            return;
+        }
+
+        m_text->setVisible(true);
+        if (m_typingDots)
+            m_typingDots->setVisible(false);
+        if (m_bubbleBox)
+            m_bubbleBox->setVisible(true);
 
         m_text->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         m_text->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -272,8 +395,10 @@ private:
     QLabel* m_avatar{nullptr};
     ThemeWidgets::ChatBubbleBox* m_bubbleBox{nullptr};
     ThemeWidgets::ChatBubbleTextView* m_text{nullptr};
+    TypingDotsWidget* m_typingDots{nullptr};
     int m_maxBubbleWidth{360};
     int m_rowWidth{520};
+    bool m_waitingForResponse{false};
 };
 
 } // namespace
@@ -673,6 +798,7 @@ void ChatWindow::appendAiMessageStart()
     {
         auto* item = new QListWidgetItem(d->list);
         auto* w = new ChatMessageWidget(d->aiAvatar, QString(), /*isUser*/false, nullptr);
+        w->setWaitingForResponse(true);
         w->setMaxBubbleWidth(d->computeBubbleMaxWidth());
         w->setRowWidth(d->viewportRowWidth());
         const QSize hint = w->sizeHint();
