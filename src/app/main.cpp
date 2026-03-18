@@ -23,12 +23,14 @@
 #include "ui/AboutWindow.hpp"
 #include "ai/ChatController.hpp"
 #include "ui/ChatWindow.hpp"
+#include "ui/theme/ThemeApi.hpp"
 #include "common/Utils.hpp"
 #include <QEvent>
 #include <QWindow>
 #include <QShortcut>
 #include <QTranslator>
 #include <QtGlobal>
+#include <cstdlib>
 
 static bool isLinuxWayland()
 {
@@ -38,6 +40,32 @@ static bool isLinuxWayland()
     return false;
 #endif
 }
+
+#if defined(Q_OS_MACOS)
+static QIcon resolveMacTrayIcon(const QString& resRoot, const QIcon& fallbackIcon)
+{
+    const QString preferredIconPath =
+        QDir(resRoot).filePath(QStringLiteral("icons/menubar-icon-dark.png"));
+    const QString fallbackMenubarIconPath =
+        QDir(resRoot).filePath(QStringLiteral("icons/menubar-icon.png"));
+
+    QIcon trayIcon(preferredIconPath);
+    if (trayIcon.isNull()) {
+        trayIcon = QIcon(fallbackMenubarIconPath);
+    }
+    if (trayIcon.isNull()) {
+        trayIcon = fallbackIcon;
+    }
+
+    // Mark the menu bar icon as a template/mask icon so macOS automatically
+    // renders it with the correct contrast for light and dark menu bar backgrounds.
+    if (!trayIcon.isNull()) {
+        trayIcon.setIsMask(true);
+    }
+
+    return trayIcon;
+}
+#endif
 
 static void cacheWindowGeometry(QWidget* w)
 {
@@ -232,7 +260,10 @@ int main(int argc, char *argv[]) {
     //fmt.setSamples(4); // MSAA x4: balance quality and memory (was 8)
     QSurfaceFormat::setDefaultFormat(fmt);
 
-    QApplication app(argc, argv);
+    // Work around a macOS/Qt shutdown crash in QApplication::~QApplication by
+    // letting the process exit without running this destructor.
+    auto* appPtr = new QApplication(argc, argv);
+    QApplication& app = *appPtr;
 #if defined(Q_OS_LINUX)
     if (!isLinuxWayland()) {
         QMessageBox::warning(
@@ -252,6 +283,7 @@ int main(int argc, char *argv[]) {
     // Bootstrap settings and models
     SettingsManager::instance().load();
     SettingsManager::instance().bootstrap(QCoreApplication::applicationDirPath());
+    Theme::installApplicationStyle(app, SettingsManager::instance().theme());
 
     const QIcon appIcon(appResourcePath(QStringLiteral("icons/app-icon.png")));
     if (!appIcon.isNull()) {
@@ -341,17 +373,15 @@ int main(int argc, char *argv[]) {
 
     // System tray (menu bar) icon and menu
     auto tray = new QSystemTrayIcon(&app);
-    QIcon trayIcon(
 #if defined(Q_OS_MACOS)
-        QDir(resRoot).filePath(QStringLiteral("icons/menubar-icon.png"))
+    tray->setIcon(resolveMacTrayIcon(resRoot, app.windowIcon()));
 #else
-        QDir(resRoot).filePath(QStringLiteral("icons/app-icon.png"))
-#endif
-    );
+    QIcon trayIcon(QDir(resRoot).filePath(QStringLiteral("icons/app-icon.png")));
     if (trayIcon.isNull()) {
         trayIcon = app.windowIcon();
     }
     tray->setIcon(trayIcon);
+#endif
     tray->setToolTip(QStringLiteral("AmaiGirl"));
 
     auto menu = new QMenu();
@@ -489,6 +519,10 @@ int main(int argc, char *argv[]) {
                                      QObject::tr("提示"),
                                      QObject::tr("未找到对应语言包，已回退为内置中文文案。"));
         }
+    });
+
+    QObject::connect(settingsWnd, &SettingsWindow::themeChanged, &app, [&app](const QString& themeId){
+        Theme::applyTheme(app, themeId);
     });
 
     QObject::connect(settingsWnd, &SettingsWindow::requestLoadModel, [currentRenderer, chatCtl](const QString& json){
@@ -640,5 +674,7 @@ int main(int argc, char *argv[]) {
         });
     }
 
-    return app.exec();
+    const int exitCode = app.exec();
+    Q_UNUSED(appPtr);
+    std::_Exit(exitCode);
 }

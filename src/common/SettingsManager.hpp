@@ -24,8 +24,8 @@ public:
     QString selectedModelFolder() const;
     void setSelectedModelFolder(const QString& name);
 
-    QString themeMode() const;
-    void setThemeMode(const QString& mode);
+    QString theme() const;
+    void setTheme(const QString& themeId);
 
     // UI language code (e.g. zh_CN / en_US)
     QString currentLanguage() const;
@@ -113,7 +113,7 @@ private:
 
     QString m_modelsRoot;
     QString m_selectedFolder;
-    QString m_themeMode{"system"};
+    QString m_theme{"era"};
     QString m_currentLanguage;
     int m_winX{-1}, m_winY{-1}, m_winW{0}, m_winH{0};
     QString m_winScreen; // screen signature used when saving window geometry

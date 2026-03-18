@@ -38,10 +38,14 @@ signals:
     // i18n
     void languageChanged(const QString& languageCode);
 
+    // style/theme scheme
+    void themeChanged(const QString& themeId);
+
 protected:
     bool event(QEvent* e) override;
 
 private:
     class Impl; QScopedPointer<Impl> d;
+    void refreshSidebarThemeIndicator();
     void refreshModelList();
 };

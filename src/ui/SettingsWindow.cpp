@@ -1,4 +1,5 @@
 #include "ui/SettingsWindow.hpp"
+#include "app/Version.hpp"
 #include "common/SettingsManager.hpp"
 #include "common/Utils.hpp"
 #include <QStandardPaths>
@@ -11,13 +12,19 @@
 #include <QJsonValue>
 #include <QApplication>
 #include <QPalette>
-#include <QTabWidget>
+#include <QStackedWidget>
 #include <QVBoxLayout>
+#include <QGridLayout>
+#include "ui/theme/ThemeApi.hpp"
+#include "ui/theme/ThemeWidgets.hpp"
 #include <QHBoxLayout>
 #include <QFormLayout>
 #include <QComboBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QSignalBlocker>
+#include <QDebug>
+#include <QIcon>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QDesktopServices>
@@ -30,9 +37,11 @@
 #include <QScreen>
 #include <QGuiApplication>
 #include <QCursor>
+#include <QFont>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QLocale>
+#include <QStyleHints>
 #include <QtGlobal>
 
 #include <QtMultimedia/QMediaDevices>
@@ -60,48 +69,99 @@ static bool copyRecursively(const QString& srcPath, const QString& dstPath) {
     return true;
 }
 
+namespace {
+constexpr int kFormHorizontalSpacing = 12;
+constexpr int kFormVerticalSpacing = 10;
+constexpr int kFormLeftPadding = 20;
+constexpr int kFormRightPadding = 36;
+constexpr int kFormTopPadding = 12;
+constexpr int kFormBottomPadding = 16;
+constexpr int kInlineRowSpacing = 8;
+constexpr int kSidebarFooterSpacing = 10;
+constexpr int kSidebarThemeIconSize = 22;
+constexpr int kSidebarFooterTopPadding = 14;
+constexpr int kSidebarFooterBottomPadding = 12;
+constexpr int kSidebarFooterRightInset = 14;
+constexpr auto kReleasesPageUrl = "https://github.com/IAIAYN/AmaiGirl/releases";
+
+bool currentColorThemeIsDark(const QWidget* context)
+{
+    if (const QStyleHints* hints = QGuiApplication::styleHints())
+    {
+        const Qt::ColorScheme scheme = hints->colorScheme();
+        if (scheme == Qt::ColorScheme::Dark)
+            return true;
+        if (scheme == Qt::ColorScheme::Light)
+            return false;
+    }
+
+    const QPalette palette = context ? context->palette() : QApplication::palette();
+    const qreal avgLightness = (palette.color(QPalette::Window).lightnessF()
+        + palette.color(QPalette::Base).lightnessF()) * 0.5;
+    return avgLightness < 0.5;
+}
+} // namespace
+
+static void applyLeftAlignedFormLayout(QFormLayout* form)
+{
+    if (!form) return;
+    // Keep all tabs visually consistent and reserve left/right breathing room.
+    form->setContentsMargins(kFormLeftPadding, kFormTopPadding, kFormRightPadding, kFormBottomPadding);
+    form->setHorizontalSpacing(kFormHorizontalSpacing);
+    form->setVerticalSpacing(kFormVerticalSpacing);
+    form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    form->setRowWrapPolicy(QFormLayout::DontWrapRows);
+}
+
 class SettingsWindow::Impl {
 public:
-    QTabWidget* tabs{nullptr};
+    QWidget* sidebar{nullptr};
+    ThemeWidgets::TabBar*     tabs{nullptr};
+    QWidget* sidebarFooter{nullptr};
+    QLabel* themeSchemeIconLabel{nullptr};
+    QPushButton* versionLinkButton{nullptr};
+    QStackedWidget* tabStack{nullptr};
     QWidget* basic{nullptr};
     QFormLayout* basicForm{nullptr};
     QWidget* pathRowWidget{nullptr};
     QWidget* topRowWidget{nullptr};
-    QComboBox* modelCombo{nullptr};
+    ThemeWidgets::ComboBox* modelCombo{nullptr};
     QLabel* pathLabel{nullptr};
-    QPushButton* chooseBtn{nullptr};
-    QPushButton* openBtn{nullptr};
-    QPushButton* resetDirBtn{nullptr};
-    QComboBox* themeCombo{nullptr};
-    QComboBox* languageCombo{nullptr};
-    QPushButton* resetBtn{nullptr};
+    ThemeWidgets::Button* chooseBtn{nullptr};
+    ThemeWidgets::Button* openBtn{nullptr};
+    ThemeWidgets::Button* resetDirBtn{nullptr};
+    ThemeWidgets::ComboBox* themeCombo{nullptr};
+    ThemeWidgets::ComboBox* languageCombo{nullptr};
+    ThemeWidgets::Button* resetBtn{nullptr};
 
     QWidget* modelTab{nullptr};
     QLabel* modelNameTitle{nullptr};
     QLabel* watermarkTitle{nullptr};
     QLabel* curModelName{nullptr};
-    QPushButton* openModelDirBtn{nullptr};
-    QCheckBox* chkBlink{nullptr};
-    QCheckBox* chkBreath{nullptr};
-    QCheckBox* chkGaze{nullptr};
-    QCheckBox* chkPhysics{nullptr};
+    ThemeWidgets::Button* openModelDirBtn{nullptr};
+    ThemeWidgets::Switch* chkBlink{nullptr};
+    ThemeWidgets::Switch* chkBreath{nullptr};
+    ThemeWidgets::Switch* chkGaze{nullptr};
+    ThemeWidgets::Switch* chkPhysics{nullptr};
     QLabel* tipBreath{nullptr};
     QLabel* tipBlink{nullptr};
     QLabel* tipGaze{nullptr};
     QLabel* tipPhysics{nullptr};
 
     QLabel* wmFileLabel{nullptr};
-    QPushButton* wmChooseBtn{nullptr};
-    QPushButton* wmClearBtn{nullptr};
+    ThemeWidgets::Button* wmChooseBtn{nullptr};
+    ThemeWidgets::Button* wmClearBtn{nullptr};
 
     // AI tab
     QWidget* aiTab{nullptr};
     QFormLayout* aiForm{nullptr};
-    QLineEdit* aiBaseUrl{nullptr};
-    QLineEdit* aiKey{nullptr};
-    QLineEdit* aiModel{nullptr};
-    QPlainTextEdit* aiSystemPrompt{nullptr};
-    QCheckBox* aiStream{nullptr};
+    ThemeWidgets::LineEdit* aiBaseUrl{nullptr};
+    ThemeWidgets::LineEdit* aiKey{nullptr};
+    ThemeWidgets::LineEdit* aiModel{nullptr};
+    ThemeWidgets::PlainTextEdit* aiSystemPrompt{nullptr};
+    ThemeWidgets::Switch* aiStream{nullptr};
     QWidget* aiBaseUrlRow{nullptr};
     QWidget* aiKeyRow{nullptr};
     QWidget* aiModelRow{nullptr};
@@ -121,22 +181,22 @@ public:
     QLabel* tipTtsVoice{nullptr};
 
     // TTS
-    QLineEdit* ttsBaseUrl{nullptr};
-    QLineEdit* ttsKey{nullptr};
-    QLineEdit* ttsModel{nullptr};
-    QLineEdit* ttsVoice{nullptr};
+    ThemeWidgets::LineEdit* ttsBaseUrl{nullptr};
+    ThemeWidgets::LineEdit* ttsKey{nullptr};
+    ThemeWidgets::LineEdit* ttsModel{nullptr};
+    ThemeWidgets::LineEdit* ttsVoice{nullptr};
 
     QWidget* advancedTab{nullptr};
     QFormLayout* advancedForm{nullptr};
     QWidget* cleanupRowWidget{nullptr};
-    QPushButton* clearCacheBtn{nullptr};
-    QPushButton* clearChatsBtn{nullptr};
-    QComboBox* texCapCombo{nullptr};
-    QComboBox* msaaCombo{nullptr};
+    ThemeWidgets::Button* clearCacheBtn{nullptr};
+    ThemeWidgets::Button* clearChatsBtn{nullptr};
+    ThemeWidgets::ComboBox* texCapCombo{nullptr};
+    ThemeWidgets::ComboBox* msaaCombo{nullptr};
 
     // Advanced: new combos
-    QComboBox* screenCombo{nullptr};
-    QComboBox* audioOutCombo{nullptr};
+    ThemeWidgets::ComboBox* screenCombo{nullptr};
+    ThemeWidgets::ComboBox* audioOutCombo{nullptr};
 
     QFileSystemWatcher* fsw{nullptr};
     QTimer* debounce{nullptr};
@@ -163,24 +223,89 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     d->central = new QWidget(this);
     setCentralWidget(d->central);
 
-    auto rootLay = new QVBoxLayout(d->central);
+    auto rootLay = new QHBoxLayout(d->central);
     rootLay->setContentsMargins(12,12,12,12);
-    d->tabs = new QTabWidget(d->central);
-    rootLay->addWidget(d->tabs);
+    rootLay->setSpacing(0);
+
+    d->sidebar = new QWidget(d->central);
+    d->sidebar->setObjectName(QStringLiteral("settingsSidebar"));
+    auto sideLay = new QGridLayout(d->sidebar);
+    sideLay->setContentsMargins(0, 0, 0, 0);
+    sideLay->setHorizontalSpacing(0);
+    sideLay->setVerticalSpacing(0);
+
+    d->tabs = new ThemeWidgets::TabBar(d->sidebar);
+    {
+        QFont tabFont = d->tabs->font();
+        if (tabFont.pointSizeF() > 0.0)
+            tabFont.setPointSizeF(tabFont.pointSizeF() + 2.0);
+        else
+            tabFont.setPointSize(14);
+        d->tabs->setFont(tabFont);
+    }
+    d->tabs->setOrientation(ThemeWidgets::TabBar::Orientation::Vertical);
+
+    d->sidebarFooter = new QWidget(d->sidebar);
+    d->sidebarFooter->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+    auto footerLay = new QVBoxLayout(d->sidebarFooter);
+    footerLay->setContentsMargins(0, kSidebarFooterTopPadding, kSidebarFooterRightInset, kSidebarFooterBottomPadding);
+    footerLay->setSpacing(kSidebarFooterSpacing);
+
+    d->themeSchemeIconLabel = new QLabel(d->sidebarFooter);
+    d->themeSchemeIconLabel->setObjectName(QStringLiteral("settingsThemeSchemeIcon"));
+    d->themeSchemeIconLabel->setAlignment(Qt::AlignCenter);
+    d->themeSchemeIconLabel->setFixedSize(kSidebarThemeIconSize, kSidebarThemeIconSize);
+
+    d->versionLinkButton = new QPushButton(d->sidebarFooter);
+    d->versionLinkButton->setObjectName(QStringLiteral("settingsVersionLinkButton"));
+    d->versionLinkButton->setCursor(Qt::PointingHandCursor);
+    d->versionLinkButton->setFocusPolicy(Qt::NoFocus);
+    d->versionLinkButton->setFlat(true);
+    d->versionLinkButton->setText(QStringLiteral("v%1").arg(QString::fromLatin1(AMAI_GIRL_VERSION)));
+    d->versionLinkButton->setStyleSheet(QStringLiteral(
+        "QPushButton#settingsVersionLinkButton {"
+        " border: none; background: transparent; padding: 0px; text-decoration: none; }"
+        "QPushButton#settingsVersionLinkButton:pressed { background: transparent; }"
+    ));
+    connect(d->versionLinkButton, &QPushButton::clicked, this, [] {
+        QDesktopServices::openUrl(QUrl(QString::fromLatin1(kReleasesPageUrl)));
+    });
+
+    footerLay->addWidget(d->themeSchemeIconLabel, 0, Qt::AlignHCenter);
+    footerLay->addWidget(d->versionLinkButton, 0, Qt::AlignHCenter);
+
+    sideLay->addWidget(d->tabs, 0, 0);
+    sideLay->addWidget(d->sidebarFooter, 0, 0, Qt::AlignBottom);
+
+    d->tabStack = new QStackedWidget(d->central);
+    rootLay->addWidget(d->sidebar, 0);
+    rootLay->addWidget(d->tabStack, 1);
+    connect(d->tabs, &ThemeWidgets::TabBar::currentChanged, this, [this](int index){
+        d->tabStack->setCurrentIndex(index);
+        if (auto* fw = QApplication::focusWidget()) fw->clearFocus();
+        d->tabs->setFocus(Qt::OtherFocusReason);
+    });
+
+    refreshSidebarThemeIndicator();
 
     // Basic tab
-    d->basic = new QWidget(d->tabs);
+    d->basic = new QWidget(d->tabStack);
     auto form = new QFormLayout(d->basic);
     d->basicForm = form;
+    applyLeftAlignedFormLayout(form);
 
     // Model path row
     auto pathRow = new QWidget(d->basic);
     d->pathRowWidget = pathRow;
     auto hl = new QHBoxLayout(pathRow); hl->setContentsMargins(0,0,0,0);
+    hl->setSpacing(kInlineRowSpacing);
     d->pathLabel = new QLabel(SettingsManager::instance().modelsRoot(), pathRow);
-    d->chooseBtn = new QPushButton(tr("选择路径"), pathRow);
-    d->openBtn   = new QPushButton(tr("打开路径"), pathRow);
-    d->resetDirBtn = new QPushButton(tr("恢复默认"), pathRow);
+    d->chooseBtn = new ThemeWidgets::Button(tr("选择路径"), pathRow);
+    d->chooseBtn->setTone(ThemeWidgets::Button::Tone::Link);
+    d->openBtn   = new ThemeWidgets::Button(tr("打开路径"), pathRow);
+    d->openBtn->setTone(ThemeWidgets::Button::Tone::Link);
+    d->resetDirBtn = new ThemeWidgets::Button(tr("恢复默认"), pathRow);
+    d->resetDirBtn->setTone(ThemeWidgets::Button::Tone::Neutral);
     hl->addWidget(d->pathLabel, 1);
     hl->addWidget(d->chooseBtn);
     hl->addWidget(d->openBtn);
@@ -188,23 +313,42 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     form->addRow(tr("模型路径："), pathRow);
 
     // Current model row
-    d->modelCombo = new QComboBox(d->basic);
-    d->resetBtn = new QPushButton(tr("还原初始状态"), d->basic);
+    d->modelCombo = new ThemeWidgets::ComboBox(d->basic);
+    d->resetBtn = new ThemeWidgets::Button(tr("还原初始状态"), d->basic);
+    d->resetBtn->setTone(ThemeWidgets::Button::Tone::Danger);
     auto topRow = new QWidget(d->basic);
     d->topRowWidget = topRow;
     auto topLay = new QHBoxLayout(topRow); topLay->setContentsMargins(0,0,0,0);
+    topLay->setSpacing(kInlineRowSpacing);
     topLay->addWidget(d->modelCombo, 1);
     topLay->addWidget(d->resetBtn);
     form->addRow(tr("当前模型："), topRow);
 
     // Theme
-    d->themeCombo = new QComboBox(d->basic);
-    // 仅保留“跟随系统”，不再手动切换亮/暗，也不在代码里控制 palette
-    d->themeCombo->addItems({tr("跟随系统")});
-    d->themeCombo->setEnabled(false);
+    d->themeCombo = new ThemeWidgets::ComboBox(d->basic);
+    const QStringList availableThemes = Theme::availableThemeIds();
+    for (const QString& id : availableThemes)
+    {
+        if (id == QStringLiteral("era"))
+            d->themeCombo->addItem(tr("Era"), id);
+        else
+            d->themeCombo->addItem(id, id);
+    }
+    if (d->themeCombo->count() == 0)
+        d->themeCombo->addItem(tr("Era"), QStringLiteral("era"));
+
+    const QString configuredTheme = Theme::normalizeThemeId(SettingsManager::instance().theme());
+    int themeIndex = d->themeCombo->findData(configuredTheme);
+    if (themeIndex < 0)
+    {
+        const QString fallbackLabel = configuredTheme == QStringLiteral("era") ? tr("Era") : configuredTheme;
+        d->themeCombo->addItem(fallbackLabel, configuredTheme);
+        themeIndex = d->themeCombo->findData(configuredTheme);
+    }
+    d->themeCombo->setCurrentIndex(themeIndex >= 0 ? themeIndex : 0);
     form->addRow(tr("当前主题："), d->themeCombo);
 
-    d->languageCombo = new QComboBox(d->basic);
+    d->languageCombo = new ThemeWidgets::ComboBox(d->basic);
     d->languageCombo->addItem(tr("跟随系统"), QStringLiteral("system"));
     d->languageCombo->addItem(tr("简体中文"), QStringLiteral("zh_CN"));
     d->languageCombo->addItem(QStringLiteral("English"), QStringLiteral("en_US"));
@@ -221,46 +365,60 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     }
     form->addRow(tr("当前语言："), d->languageCombo);
 
-    d->tabs->addTab(d->basic, tr("基本设置"));
+    d->tabStack->addWidget(d->basic);
+    d->tabs->addTab(
+        tr("基本设置"),
+        Theme::themedIcon(Theme::IconToken::SettingsBasic)
+    );
 
     // Model settings tab
-    d->modelTab = new QWidget(d->tabs);
-    auto vbox = new QVBoxLayout(d->modelTab);
-    auto row1 = new QHBoxLayout(); row1->setSpacing(6); row1->setContentsMargins(0,0,0,0);
+    d->modelTab = new QWidget(d->tabStack);
+    auto modelForm = new QFormLayout(d->modelTab);
+    applyLeftAlignedFormLayout(modelForm);
+
+    auto modelNameRow = new QWidget(d->modelTab);
+    auto row1 = new QHBoxLayout(modelNameRow);
+    row1->setSpacing(kInlineRowSpacing);
+    row1->setContentsMargins(0,0,0,0);
     d->curModelName = new QLabel("", d->modelTab);
-    d->openModelDirBtn = new QPushButton(tr("打开当前模型路径"), d->modelTab);
+    d->openModelDirBtn = new ThemeWidgets::Button(tr("打开当前模型路径"), d->modelTab);
+    d->openModelDirBtn->setTone(ThemeWidgets::Button::Tone::Link);
     d->modelNameTitle = new QLabel(tr("模型名称："), d->modelTab);
-    row1->addWidget(d->modelNameTitle);
     row1->addWidget(d->curModelName, 1);
     row1->addWidget(d->openModelDirBtn);
-    vbox->addLayout(row1);
+    modelForm->addRow(d->modelNameTitle, modelNameRow);
 
-    auto wmRow = new QHBoxLayout(); wmRow->setSpacing(6); wmRow->setContentsMargins(0,0,0,0);
+    auto wmRowWidget = new QWidget(d->modelTab);
+    auto wmRow = new QHBoxLayout(wmRowWidget);
+    wmRow->setSpacing(kInlineRowSpacing);
+    wmRow->setContentsMargins(0,0,0,0);
     d->watermarkTitle = new QLabel(tr("去除水印："), d->modelTab);
-    wmRow->addWidget(d->watermarkTitle);
     d->wmFileLabel = new QLabel(tr("无"), d->modelTab);
     d->wmFileLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    d->wmChooseBtn = new QPushButton(tr("选择文件"), d->modelTab);
-    d->wmClearBtn  = new QPushButton(tr("取消所选"), d->modelTab);
+    d->wmChooseBtn = new ThemeWidgets::Button(tr("选择文件"), d->modelTab);
+    d->wmChooseBtn->setTone(ThemeWidgets::Button::Tone::Link);
+    d->wmClearBtn  = new ThemeWidgets::Button(tr("取消所选"), d->modelTab);
+    d->wmClearBtn->setTone(ThemeWidgets::Button::Tone::Neutral);
     wmRow->addWidget(d->wmFileLabel, 1);
     wmRow->addWidget(d->wmChooseBtn);
     wmRow->addWidget(d->wmClearBtn);
-    vbox->addLayout(wmRow);
+    modelForm->addRow(d->watermarkTitle, wmRowWidget);
 
-    d->chkBreath  = new QCheckBox(tr("自动呼吸"), d->modelTab);
-    d->chkBlink   = new QCheckBox(tr("自动眨眼"), d->modelTab);
-    d->chkGaze    = new QCheckBox(tr("视线跟踪"), d->modelTab);
-    d->chkPhysics = new QCheckBox(tr("物理模拟"), d->modelTab);
+    d->chkBreath  = new ThemeWidgets::Switch(tr("自动呼吸"), d->modelTab);
+    d->chkBlink   = new ThemeWidgets::Switch(tr("自动眨眼"), d->modelTab);
+    d->chkGaze    = new ThemeWidgets::Switch(tr("视线跟踪"), d->modelTab);
+    d->chkPhysics = new ThemeWidgets::Switch(tr("物理模拟"), d->modelTab);
 
     d->chkBreath->setChecked(SettingsManager::instance().enableBreath());
     d->chkBlink->setChecked(SettingsManager::instance().enableBlink());
     d->chkGaze->setChecked(SettingsManager::instance().enableGaze());
     d->chkPhysics->setChecked(SettingsManager::instance().enablePhysics());
 
-    auto mkInlineTipRow = [this](QCheckBox* chk, const QString& tip, QLabel** outTip){
+    auto mkInlineTipRow = [this](ThemeWidgets::Switch* chk, const QString& tip, QLabel** outTip){
         QWidget* row = new QWidget(d->modelTab);
         auto lay = new QHBoxLayout(row);
-        lay->setContentsMargins(0,0,0,0); lay->setSpacing(2);
+        lay->setContentsMargins(0,0,0,0);
+        lay->setSpacing(kInlineRowSpacing);
         chk->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
         lay->addWidget(chk);
         lay->addWidget(new QLabel(" ", row));
@@ -273,27 +431,34 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         return row;
     };
 
-    vbox->addWidget(mkInlineTipRow(d->chkBreath,  tr("让角色在静止时也会轻微起伏（身体角度/呼吸参数）。开启视线跟踪时，自动呼吸不再影响头部；关闭后恢复。关闭本项后参数会复位。"), &d->tipBreath));
-    vbox->addWidget(mkInlineTipRow(d->chkBlink,   tr("自动眨眼并保留更自然的间隔与瞬目效果。关闭后眼部相关参数复位。"), &d->tipBlink));
-    vbox->addWidget(mkInlineTipRow(d->chkGaze,    tr("眼球、头部与身体随鼠标方向轻微转动，远距离时幅度会衰减。默认关闭；开启后将屏蔽自动呼吸对头部的影响。关闭后恢复眼球微动策略。"), &d->tipGaze));
-    vbox->addWidget(mkInlineTipRow(d->chkPhysics, tr("根据模型 physics3.json 的配置驱动物理（如头发/衣物摆动）。关闭后复位受影响参数。"), &d->tipPhysics));
-    vbox->addStretch(1);
-    d->tabs->addTab(d->modelTab, tr("模型设置"));
+    modelForm->addRow(mkInlineTipRow(d->chkBreath,  tr("让角色在静止时也会轻微起伏（身体角度/呼吸参数）。开启视线跟踪时，自动呼吸不再影响头部；关闭后恢复。关闭本项后参数会复位。"), &d->tipBreath));
+    modelForm->addRow(mkInlineTipRow(d->chkBlink,   tr("自动眨眼并保留更自然的间隔与瞬目效果。关闭后眼部相关参数复位。"), &d->tipBlink));
+    modelForm->addRow(mkInlineTipRow(d->chkGaze,    tr("眼球、头部与身体随鼠标方向轻微转动，远距离时幅度会衰减。默认关闭；开启后将屏蔽自动呼吸对头部的影响。关闭后恢复眼球微动策略。"), &d->tipGaze));
+    modelForm->addRow(mkInlineTipRow(d->chkPhysics, tr("根据模型 physics3.json 的配置驱动物理（如头发/衣物摆动）。关闭后复位受影响参数。"), &d->tipPhysics));
+    modelForm->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
+    d->tabStack->addWidget(d->modelTab);
+    d->tabs->addTab(
+        tr("模型设置"),
+        Theme::themedIcon(Theme::IconToken::SettingsModel)
+    );
 
     // ---- AI tab ----
-    d->aiTab = new QWidget(d->tabs);
+    d->aiTab = new QWidget(d->tabStack);
     {
-        auto lay = new QVBoxLayout(d->aiTab);
-        auto form2 = new QFormLayout();
+        auto form2 = new QFormLayout(d->aiTab);
         d->aiForm = form2;
+        applyLeftAlignedFormLayout(form2);
 
-        d->aiBaseUrl = new QLineEdit(SettingsManager::instance().aiBaseUrl(), d->aiTab);
-        d->aiKey = new QLineEdit(SettingsManager::instance().aiApiKey(), d->aiTab);
+        d->aiBaseUrl = new ThemeWidgets::LineEdit(SettingsManager::instance().aiBaseUrl(), d->aiTab);
+        d->aiBaseUrl->setFixedHeight(26);
+        d->aiKey = new ThemeWidgets::LineEdit(SettingsManager::instance().aiApiKey(), d->aiTab);
+        d->aiKey->setFixedHeight(26);
         d->aiKey->setEchoMode(QLineEdit::Password);
-        d->aiModel = new QLineEdit(SettingsManager::instance().aiModel(), d->aiTab);
-        d->aiSystemPrompt = new QPlainTextEdit(SettingsManager::instance().aiSystemPrompt(), d->aiTab);
+        d->aiModel = new ThemeWidgets::LineEdit(SettingsManager::instance().aiModel(), d->aiTab);
+        d->aiModel->setFixedHeight(26);
+        d->aiSystemPrompt = new ThemeWidgets::PlainTextEdit(SettingsManager::instance().aiSystemPrompt(), d->aiTab);
         d->aiSystemPrompt->setPlaceholderText(tr("支持变量：$name$（当前模型名）"));
-        d->aiStream = new QCheckBox(tr("是否流式输出"), d->aiTab);
+        d->aiStream = new ThemeWidgets::Switch(tr("是否流式输出"), d->aiTab);
         d->aiStream->setChecked(SettingsManager::instance().aiStreamEnabled());
 
         // AI/TTS tooltip helper (same symbol style as 模型设置)
@@ -301,7 +466,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             QWidget* w = new QWidget(parent);
             auto hl = new QHBoxLayout(w);
             hl->setContentsMargins(0,0,0,0);
-            hl->setSpacing(2);
+            hl->setSpacing(kInlineRowSpacing);
             hl->addStretch(1);
             hl->addWidget(new QLabel(" ", w));
             auto tipLbl = new QLabel(QString::fromUtf8("ⓘ"), w);
@@ -316,7 +481,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             QWidget* row = new QWidget(d->aiTab);
             auto hl = new QHBoxLayout(row);
             hl->setContentsMargins(0,0,0,0);
-            hl->setSpacing(6);
+            hl->setSpacing(kInlineRowSpacing);
             hl->addWidget(field, 1);
             hl->addWidget(mkInlineInfo(tip, row, outTip));
             form2->addRow(label, row);
@@ -365,7 +530,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             QWidget* row = new QWidget(d->aiTab);
             auto hl = new QHBoxLayout(row);
             hl->setContentsMargins(0,0,0,0);
-            hl->setSpacing(6);
+            hl->setSpacing(kInlineRowSpacing);
             hl->addWidget(d->aiSystemPrompt, 1);
             hl->addWidget(mkInlineInfo(
                 tr(
@@ -385,7 +550,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             QWidget* row = new QWidget(d->aiTab);
             auto hl = new QHBoxLayout(row);
             hl->setContentsMargins(0,0,0,0);
-            hl->setSpacing(6);
+            hl->setSpacing(kInlineRowSpacing);
             hl->addWidget(d->aiStream);
             hl->addWidget(mkInlineInfo(
                 tr(
@@ -399,11 +564,15 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         }
 
         // TTS fields
-        d->ttsBaseUrl = new QLineEdit(SettingsManager::instance().ttsBaseUrl(), d->aiTab);
-        d->ttsKey = new QLineEdit(SettingsManager::instance().ttsApiKey(), d->aiTab);
+        d->ttsBaseUrl = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsBaseUrl(), d->aiTab);
+        d->ttsBaseUrl->setFixedHeight(26);
+        d->ttsKey = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsApiKey(), d->aiTab);
+        d->ttsKey->setFixedHeight(26);
         d->ttsKey->setEchoMode(QLineEdit::Password);
-        d->ttsModel = new QLineEdit(SettingsManager::instance().ttsModel(), d->aiTab);
-        d->ttsVoice = new QLineEdit(SettingsManager::instance().ttsVoice(), d->aiTab);
+        d->ttsModel = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsModel(), d->aiTab);
+        d->ttsModel->setFixedHeight(26);
+        d->ttsVoice = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsVoice(), d->aiTab);
+        d->ttsVoice->setFixedHeight(26);
 
         mkRowWithInfo(
             tr("语音API："),
@@ -452,34 +621,38 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             &d->tipTtsVoice
         );
 
-        lay->addLayout(form2);
-        lay->addStretch(1);
+        form2->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
 
         // hot update
         connect(d->aiBaseUrl, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setAiBaseUrl(t); });
         connect(d->aiKey, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setAiApiKey(t); });
         connect(d->aiModel, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setAiModel(t); });
         connect(d->aiSystemPrompt, &QPlainTextEdit::textChanged, this, [this]{ SettingsManager::instance().setAiSystemPrompt(d->aiSystemPrompt->toPlainText()); });
-        connect(d->aiStream, &QCheckBox::toggled, this, [](bool on){ SettingsManager::instance().setAiStreamEnabled(on); });
+        connect(d->aiStream, &ThemeWidgets::Switch::toggled, this, [](bool on){ SettingsManager::instance().setAiStreamEnabled(on); });
 
         connect(d->ttsBaseUrl, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsBaseUrl(t); });
         connect(d->ttsKey, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsApiKey(t); });
         connect(d->ttsModel, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsModel(t); });
         connect(d->ttsVoice, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsVoice(t); });
     }
-    d->tabs->insertTab(2, d->aiTab, tr("AI设置"));
+    d->tabStack->addWidget(d->aiTab);
+    d->tabs->addTab(
+        tr("AI设置"),
+        Theme::themedIcon(Theme::IconToken::SettingsAi)
+    );
 
     // Advanced tab
-    d->advancedTab = new QWidget(d->tabs);
+    d->advancedTab = new QWidget(d->tabStack);
     auto advLay = new QFormLayout(d->advancedTab);
     d->advancedForm = advLay;
-    d->texCapCombo = new QComboBox(d->advancedTab); d->texCapCombo->addItems({"4096","3072","2048","1024"});
+    applyLeftAlignedFormLayout(advLay);
+    d->texCapCombo = new ThemeWidgets::ComboBox(d->advancedTab); d->texCapCombo->addItems({"4096","3072","2048","1024"});
     {
         int cur = SettingsManager::instance().textureMaxDim();
         int idx = d->texCapCombo->findText(QString::number(cur)); if (idx<0) idx = 2; d->texCapCombo->setCurrentIndex(idx);
     }
     advLay->addRow(tr("贴图上限："), d->texCapCombo);
-    d->msaaCombo = new QComboBox(d->advancedTab); d->msaaCombo->addItems({"2x","4x","8x"});
+    d->msaaCombo = new ThemeWidgets::ComboBox(d->advancedTab); d->msaaCombo->addItems({"2x","4x","8x"});
     {
         int cur = SettingsManager::instance().msaaSamples();
         int idx = (cur==2?0:(cur==8?2:1)); d->msaaCombo->setCurrentIndex(idx);
@@ -487,7 +660,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     advLay->addRow(tr("MSAA："), d->msaaCombo);
 
     // ---- Model display screen ----
-    d->screenCombo = new QComboBox(d->advancedTab);
+    d->screenCombo = new ThemeWidgets::ComboBox(d->advancedTab);
     d->screenCombo->addItem(tr("系统默认（默认）"), QString());
     {
         const QString preferred = SettingsManager::instance().preferredScreenName();
@@ -515,7 +688,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     advLay->addRow(tr("模型显示："), d->screenCombo);
 
     // ---- Audio output device ----
-    d->audioOutCombo = new QComboBox(d->advancedTab);
+    d->audioOutCombo = new ThemeWidgets::ComboBox(d->advancedTab);
     d->audioOutCombo->addItem(tr("系统默认（默认）"), QString());
     {
         const QString preferredB64 = SettingsManager::instance().preferredAudioOutputIdBase64();
@@ -547,8 +720,11 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     d->cleanupRowWidget = cleanupRow;
     auto cleanupLay = new QHBoxLayout(cleanupRow);
     cleanupLay->setContentsMargins(0, 0, 0, 0);
-    auto btnClearCache = new QPushButton(tr("清除缓存"), cleanupRow);
-    auto btnClearChats = new QPushButton(tr("清除所有对话历史"), cleanupRow);
+    cleanupLay->setSpacing(kInlineRowSpacing);
+    auto btnClearCache = new ThemeWidgets::Button(tr("清除缓存"), cleanupRow);
+    btnClearCache->setTone(ThemeWidgets::Button::Tone::Warning);
+    auto btnClearChats = new ThemeWidgets::Button(tr("清除所有对话历史"), cleanupRow);
+    btnClearChats->setTone(ThemeWidgets::Button::Tone::Danger);
     d->clearCacheBtn = btnClearCache;
     d->clearChatsBtn = btnClearChats;
     cleanupLay->addWidget(d->clearCacheBtn);
@@ -557,7 +733,11 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     advLay->addRow(tr("清理："), cleanupRow);
 
     advLay->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
-    d->tabs->addTab(d->advancedTab, tr("高级设置"));
+    d->tabStack->addWidget(d->advancedTab);
+    d->tabs->addTab(
+        tr("高级设置"),
+        Theme::themedIcon(Theme::IconToken::SettingsAdvanced)
+    );
 
     auto confirm = [this](const QString& title, const QString& text) -> bool {
         auto ret = QMessageBox::question(this, title, text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
@@ -628,13 +808,16 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
 
     // Connections
     connect(d->modelCombo, &QComboBox::currentTextChanged, this, [this](const QString& name){
+        if (name.isEmpty()) return;
         auto& sm = SettingsManager::instance();
+        if (sm.selectedModelFolder() == name) return;
         sm.setSelectedModelFolder(name);
         sm.ensureModelConfigExists(name);
         for (const auto& e : sm.scanModels())
         {
             if (e.folderName == name)
             {
+                qDebug() << "[ModelFlow][SettingsWindow] emit requestLoadModel" << "name=" << name << "json=" << e.jsonPath;
                 emit requestLoadModel(e.jsonPath);
                 break;
             }
@@ -695,10 +878,10 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     connect(d->openModelDirBtn, &QPushButton::clicked, this, [this]{ QString folder = SettingsManager::instance().selectedModelFolder(); QString root = SettingsManager::instance().modelsRoot(); if (folder.isEmpty()) { auto entries = SettingsManager::instance().scanModels(); if (!entries.isEmpty()) folder = entries.front().folderName; } if (!folder.isEmpty()) QDesktopServices::openUrl(QUrl::fromLocalFile(QDir(root).filePath(folder))); });
     connect(d->modelCombo, &QComboBox::currentTextChanged, this, [refreshCurModelName](const QString&){ refreshCurModelName(); });
 
-    connect(d->chkBlink, &QCheckBox::toggled, this, [this](bool on){ SettingsManager::instance().setEnableBlink(on); emit toggleBlink(on); });
-    connect(d->chkBreath, &QCheckBox::toggled, this, [this](bool on){ SettingsManager::instance().setEnableBreath(on); emit toggleBreath(on); });
-    connect(d->chkGaze, &QCheckBox::toggled, this, [this](bool on){ SettingsManager::instance().setEnableGaze(on); emit toggleGaze(on); });
-    connect(d->chkPhysics, &QCheckBox::toggled, this, [this](bool on){ SettingsManager::instance().setEnablePhysics(on); emit togglePhysics(on); });
+    connect(d->chkBlink, &ThemeWidgets::Switch::toggled, this, [this](bool on){ SettingsManager::instance().setEnableBlink(on); emit toggleBlink(on); });
+    connect(d->chkBreath, &ThemeWidgets::Switch::toggled, this, [this](bool on){ SettingsManager::instance().setEnableBreath(on); emit toggleBreath(on); });
+    connect(d->chkGaze, &ThemeWidgets::Switch::toggled, this, [this](bool on){ SettingsManager::instance().setEnableGaze(on); emit toggleGaze(on); });
+    connect(d->chkPhysics, &ThemeWidgets::Switch::toggled, this, [this](bool on){ SettingsManager::instance().setEnablePhysics(on); emit togglePhysics(on); });
 
     connect(d->wmChooseBtn, &QPushButton::clicked, this, [this, chooseOpenFile]{ QString folder = SettingsManager::instance().selectedModelFolder(); if (folder.isEmpty()) return; QString root = SettingsManager::instance().modelsRoot(); QString modelDir = QDir(root).filePath(folder); QString path = chooseOpenFile(tr("选择水印表达式文件"), modelDir, "Expression (*.exp3.json)"); if (path.isEmpty()) return; SettingsManager::instance().setWatermarkExpPath(path); d->wmFileLabel->setText(QFileInfo(path).fileName()); emit watermarkChanged(path); });
     connect(d->wmClearBtn, &QPushButton::clicked, this, [this]{ SettingsManager::instance().setWatermarkExpPath(""); d->wmFileLabel->setText(tr("无")); emit watermarkChanged(""); });
@@ -718,6 +901,12 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         const QString idB64 = d->audioOutCombo->currentData().toString();
         SettingsManager::instance().setPreferredAudioOutputIdBase64(idB64);
         emit preferredAudioOutputChanged(idB64);
+    });
+
+    connect(d->themeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
+        const QString themeId = Theme::normalizeThemeId(d->themeCombo->currentData().toString());
+        SettingsManager::instance().setTheme(themeId);
+        emit themeChanged(themeId);
     });
 
     connect(d->languageCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int){
@@ -753,7 +942,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         SettingsManager::instance().setAiSystemPrompt(d->aiSystemPrompt->toPlainText());
         emitAiChanged();
     });
-    connect(d->aiStream, &QCheckBox::toggled, this, [this, emitAiChanged](bool on){
+    connect(d->aiStream, &ThemeWidgets::Switch::toggled, this, [this, emitAiChanged](bool on){
         SettingsManager::instance().setAiStreamEnabled(on);
         emitAiChanged();
     });
@@ -780,6 +969,32 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
 
 SettingsWindow::~SettingsWindow() = default;
 
+void SettingsWindow::refreshSidebarThemeIndicator()
+{
+    if (!d || !d->themeSchemeIconLabel)
+        return;
+
+    const Theme::IconToken token = currentColorThemeIsDark(this)
+        ? Theme::IconToken::ThemeDarkIndicator
+        : Theme::IconToken::ThemeLightIndicator;
+
+    const QIcon icon = Theme::themedIcon(token);
+    d->themeSchemeIconLabel->setPixmap(icon.pixmap(QSize(kSidebarThemeIconSize, kSidebarThemeIconSize)));
+
+    if (d->versionLinkButton)
+    {
+        const QColor normal = palette().color(QPalette::Text).lighter(140);
+        const QColor hover = palette().color(QPalette::Text);
+        d->versionLinkButton->setStyleSheet(QStringLiteral(
+            "QPushButton#settingsVersionLinkButton {"
+            " border: none; background: transparent; padding: 0px;"
+            " text-decoration: none; color: %1; }"
+            "QPushButton#settingsVersionLinkButton:hover { color: %2; }"
+            "QPushButton#settingsVersionLinkButton:pressed { background: transparent; color: %2; }"
+        ).arg(normal.name(QColor::HexArgb), hover.name(QColor::HexArgb)));
+    }
+}
+
 bool SettingsWindow::event(QEvent* e)
 {
     if (e->type() == QEvent::LanguageChange)
@@ -805,8 +1020,9 @@ bool SettingsWindow::event(QEvent* e)
             if (d->clearCacheBtn) d->clearCacheBtn->setText(tr("清除缓存"));
             if (d->clearChatsBtn) d->clearChatsBtn->setText(tr("清除所有对话历史"));
 
-            if (d->themeCombo && d->themeCombo->count() > 0) {
-                d->themeCombo->setItemText(0, tr("跟随系统"));
+            if (d->themeCombo) {
+                const int idxEra = d->themeCombo->findData(QStringLiteral("era"));
+                if (idxEra >= 0) d->themeCombo->setItemText(idxEra, tr("Era"));
             }
             if (d->languageCombo) {
                 const int idxSystem = d->languageCombo->findData(QStringLiteral("system"));
@@ -932,8 +1148,56 @@ bool SettingsWindow::event(QEvent* e)
             };
             relocalizeComboDefaults(d->screenCombo);
             relocalizeComboDefaults(d->audioOutCombo);
+
+            // Recalculate layout after retranslation and shrink back if content got narrower.
+            auto shrinkWindowForLanguage = [this]{
+                if (!d || !d->central) return;
+                if (isMaximized() || isFullScreen()) return;
+
+                if (auto* lay = d->central->layout()) {
+                    lay->invalidate();
+                    lay->activate();
+                }
+
+                const int currentWidth = width();
+                const int minBaseWidth = 520;
+                int targetWidth = qMax(minBaseWidth, minimumSizeHint().width());
+
+                // Fallback for zh locales where delayed size hint updates can miss the shrink.
+                const QString langCode = SettingsManager::instance().currentLanguage();
+                if (langCode.startsWith(QStringLiteral("zh"), Qt::CaseInsensitive)
+                    && targetWidth >= currentWidth
+                    && currentWidth > minBaseWidth)
+                {
+                    targetWidth = minBaseWidth;
+                }
+
+                if (currentWidth > targetWidth) {
+                    resize(targetWidth, height());
+                }
+            };
+
+            QTimer::singleShot(0, this, shrinkWindowForLanguage);
+            QTimer::singleShot(30, this, shrinkWindowForLanguage);
         }
     }
+
+    if (e->type() == QEvent::ApplicationPaletteChange
+        || e->type() == QEvent::PaletteChange
+        || e->type() == QEvent::ThemeChange
+        || e->type() == QEvent::StyleChange)
+    {
+        if (d && d->tabs)
+        {
+            d->tabs->setTabIcon(0, Theme::themedIcon(Theme::IconToken::SettingsBasic));
+            if (d->tabs->count() > 1) d->tabs->setTabIcon(1, Theme::themedIcon(Theme::IconToken::SettingsModel));
+            if (d->tabs->count() > 2) d->tabs->setTabIcon(2, Theme::themedIcon(Theme::IconToken::SettingsAi));
+            if (d->tabs->count() > 3) d->tabs->setTabIcon(3, Theme::themedIcon(Theme::IconToken::SettingsAdvanced));
+        }
+
+        refreshSidebarThemeIndicator();
+    }
+
     return QMainWindow::event(e);
 }
 
@@ -943,6 +1207,7 @@ static void addWatchDirIfExists(QFileSystemWatcher* fsw, const QString& path) {
 
 void SettingsWindow::refreshModelList() {
     auto models = SettingsManager::instance().scanModels();
+    const QSignalBlocker blocker(d->modelCombo);
     d->modelCombo->clear();
     QString sel = SettingsManager::instance().selectedModelFolder();
     int cur = -1; int i=0;

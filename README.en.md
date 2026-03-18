@@ -1,11 +1,12 @@
 <div align="center">
-  <img src="docs/app-icon.png" alt="AmaiGirl" width="120" />
+  <img src="docs/amaigirl-banner.png" alt="AmaiGirl banner" width="640" />
   <h1>AmaiGirl</h1>
   <p><a href="README.md#zh-cn">简体中文</a> | <a href="README.en.md#en-us">English</a></p>
   <p><strong>A native AI desktop assistant with a cross-platform vision</strong> · Compatible with OpenAI-format API calls · Currently available on macOS 13.0+, Windows 10/11 (x86_64), and Linux (x86_64, Wayland)</p>
   <p>
     <a href="https://github.com/IAIAYN/AmaiGirl/releases"><img src="https://img.shields.io/github/v/release/IAIAYN/AmaiGirl?display_name=tag" alt="Release" /></a>
     <a href="https://github.com/IAIAYN/AmaiGirl/blob/main/LICENSE"><img src="https://img.shields.io/github/license/IAIAYN/AmaiGirl" alt="License" /></a>
+    <a href="https://github.com/IAIAYN/AmaiGirl/wiki"><img src="https://img.shields.io/badge/Wiki-GitHub-181717?logo=github" alt="Wiki" /></a>
     <a href="https://github.com/IAIAYN/AmaiGirl/actions/workflows/super-linter.yml"><img src="https://github.com/IAIAYN/AmaiGirl/actions/workflows/super-linter.yml/badge.svg" alt="Lint" /></a>
   </p>
 </div>
@@ -29,21 +30,69 @@ The current version provides a usable baseline on macOS 13.0+, Windows 10/11 (x8
 
 ## Demo
 
-> Models shown in this demo are from bilibili creator [@菜菜爱吃饭ovo](https://space.bilibili.com/1851126283), non-commercial only, and are not included in this source repository or release app. Desktop wallpapers shown in demos are from the internet; please contact the maintainer if any infringement is involved.
+> Models shown in this demo are from bilibili creator [@菜菜爱吃饭ovo](https://space.bilibili.com/1851126283), non-commercial only, and are not included in this source repository or release app. Please contact the maintainer if any infringement is involved.
 
-- [x] Main UI demo (macOS + Windows + Linux)
-  ![screenshot1](docs/screenshot1.png)
-  ![screenshot1.0](docs/screenshot1.0.png)
-  ![screenshot1.1](docs/screenshot1.1.png)
-- [x] Chat demo
-  ![screenshot2](docs/screenshot2.png)
-- [x] Settings demo
-  ![screenshot3](docs/screenshot3.png)
-- [x] Model switch demo
-  ![screenshot4](docs/screenshot4.png)
-  ![screenshot5](docs/screenshot5.png)
-- [x] i18n demo
-  ![screenshot6](docs/screenshot6.png)
+### Quick Preview
+
+<p align="center">
+  <a href="docs/demo-main-ui-macos.png"><img src="docs/demo-main-ui-macos.png" alt="AmaiGirl main UI demo" width="78%" /></a>
+</p>
+
+### Platform Preview (click thumbnails for full-size images)
+
+| macOS | Windows | Linux |
+| --- | --- | --- |
+| <a href="docs/demo-main-ui-macos.png"><img src="docs/demo-main-ui-macos.png" alt="macOS main UI demo" width="240" /></a> | <a href="docs/demo-main-ui-windows.png"><img src="docs/demo-main-ui-windows.png" alt="Windows main UI demo" width="240" /></a> | <a href="docs/demo-main-ui-linux.png"><img src="docs/demo-main-ui-linux.png" alt="Linux main UI demo" width="240" /></a> |
+
+### Feature Preview (click thumbnails for full-size images)
+
+| Chat | Settings | i18n |
+| --- | --- | --- |
+| <a href="docs/demo-chat-window.png"><img src="docs/demo-chat-window.png" alt="Chat demo" width="240" /></a> | <a href="docs/demo-settings-window.png"><img src="docs/demo-settings-window.png" alt="Settings demo" width="240" /></a> | <a href="docs/demo-i18n-switch.png"><img src="docs/demo-i18n-switch.png" alt="i18n demo" width="240" /></a> |
+
+| Model Switch A | Model Switch B | Full Gallery |
+| --- | --- | --- |
+| <a href="docs/demo-model-switch-a.png"><img src="docs/demo-model-switch-a.png" alt="Model switch demo A" width="240" /></a> | <a href="docs/demo-model-switch-b.png"><img src="docs/demo-model-switch-b.png" alt="Model switch demo B" width="240" /></a> | <a href="docs/demo-gallery.en.md"><img src="docs/demo-main-ui-macos.png" alt="Open full demo gallery" width="240" /></a> |
+
+<details>
+<summary>Expand to view all original full-size screenshots by platform and feature</summary>
+
+#### Platform demos
+
+##### macOS
+
+![demo-main-ui-macos](docs/demo-main-ui-macos.png)
+
+##### Windows
+
+![demo-main-ui-windows](docs/demo-main-ui-windows.png)
+
+##### Linux
+
+![demo-main-ui-linux](docs/demo-main-ui-linux.png)
+
+#### Feature demos
+
+##### Chat demo
+
+![demo-chat-window](docs/demo-chat-window.png)
+
+##### Settings demo
+
+![demo-settings-window](docs/demo-settings-window.png)
+
+##### Model switch demo
+
+![demo-model-switch-a](docs/demo-model-switch-a.png)
+![demo-model-switch-b](docs/demo-model-switch-b.png)
+
+##### i18n demo
+
+![demo-i18n-switch](docs/demo-i18n-switch.png)
+
+</details>
+
+For more screenshots and notes, see [Full Demo Gallery](docs/demo-gallery.en.md).
 
 ## Features
 
@@ -111,7 +160,7 @@ After configuration, AI replies can trigger voice playback. If playback fails, t
 - Windows build/portable package resource path: `<executable_dir>/res`
 - Linux build/install resource path: `<executable_dir>/res` or `../share/AmaiGirl/res`
 - Windows config path: `%APPDATA%/IAIAYN/AmaiGirl/Configs`
-- Windows chats/cache path: `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Chats` and `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Cache`
+- Windows chats/cache path: `%LOCALAPPDATA%/IAIAYN/AmaiGirl/Chats` and `%LOCALAPPDATA%/IAIAYN/AmaiGirl/.Cache`
 - License files are available under the `licenses` directory
 
 ## Development

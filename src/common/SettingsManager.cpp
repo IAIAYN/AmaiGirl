@@ -45,6 +45,14 @@ static QString normalizeLanguageCode(const QString& code)
     return QStringLiteral("en_US");
 }
 
+static QString normalizeThemeId(const QString& themeId)
+{
+    QString id = themeId.trimmed().toLower();
+    if (id.isEmpty() || id == QStringLiteral("system"))
+        return QStringLiteral("era");
+    return id;
+}
+
 static QString systemLanguageCode()
 {
     const QString n = QLocale::system().name();
@@ -154,14 +162,14 @@ void SettingsManager::setSelectedModelFolder(const QString& name)
     save();
 }
 
-QString SettingsManager::themeMode() const
+QString SettingsManager::theme() const
 {
-    return m_themeMode;
+    return m_theme;
 }
 
-void SettingsManager::setThemeMode(const QString& mode)
+void SettingsManager::setTheme(const QString& themeId)
 {
-    m_themeMode = mode;
+    m_theme = normalizeThemeId(themeId);
     save();
 }
 
@@ -251,9 +259,22 @@ void SettingsManager::load()
     if (err.error != QJsonParseError::NoError) return;
 
     auto root = doc.object();
+    bool needsSave = false;
     m_modelsRoot     = root.value("modelsRoot").toString(modelsRoot());
     m_selectedFolder = root.value("selectedModelFolder").toString();
-    m_themeMode      = root.value("themeMode").toString("system");
+    if (root.contains("theme"))
+    {
+        const QString rawTheme = root.value("theme").toString();
+        m_theme = normalizeThemeId(rawTheme);
+        if (m_theme != rawTheme)
+            needsSave = true;
+    }
+    else
+    {
+        m_theme = normalizeThemeId(root.value("themeMode").toString(QStringLiteral("era")));
+        if (root.contains("themeMode"))
+            needsSave = true;
+    }
     if (root.contains("currentLanguage"))
         m_currentLanguage = normalizeLanguageCode(root.value("currentLanguage").toString());
     else
@@ -286,6 +307,9 @@ void SettingsManager::load()
         m_ttsModel = tts.value("model").toString(m_ttsModel);
         m_ttsVoice = tts.value("voice").toString(m_ttsVoice);
     }
+
+    if (needsSave)
+        save();
 }
 
 void SettingsManager::save() const
@@ -296,7 +320,7 @@ void SettingsManager::save() const
     QJsonObject root;
     root["modelsRoot"]          = m_modelsRoot.isEmpty() ? defaultModelsRoot() : m_modelsRoot;
     root["selectedModelFolder"] = m_selectedFolder;
-    root["themeMode"]           = m_themeMode.isEmpty() ? "system" : m_themeMode;
+    root["theme"]               = normalizeThemeId(m_theme);
     root["currentLanguage"]     = currentLanguage();
     root["winX"]                = m_winX;
     root["winY"]                = m_winY;

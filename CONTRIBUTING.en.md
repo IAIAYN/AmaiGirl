@@ -16,21 +16,21 @@ AmaiGirl aims to become a cross-platform native AI desktop assistant. The curren
 
 - Build environment: Xcode 15 (macOS 14 SDK) or newer
 - Build tools: CMake + Ninja + Clang
-- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia)
+- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg)
 
 #### Windows
 
 - Recommended environment: Windows 10/11 (x86_64)
 - Build tools: Visual Studio 2022 (MSVC v143) or newer, or CMake + Ninja inside the matching MSVC developer environment
 - MinGW/GCC is not supported at the moment because the Live2D Cubism Windows libraries used by this repository are built for MSVC
-- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia), with `windeployqt` available
+- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg), with `windeployqt` available
 - Live2D: make sure `sdk/cubism/lib/windows/x86_64/<toolset>/` contains the matching MSVC toolset libraries `Live2DCubismCore_MD.lib` / `Live2DCubismCore_MDd.lib`
 
 #### Linux
 
 - Recommended environment: Wayland session (X11 can be used as fallback backend)
 - Build tools: CMake + Ninja + GCC/Clang
-- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia)
+- Qt: Qt 6 (Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg)
 - Optional packaging tools (AppImage): `linuxdeploy`, `appimagetool`
 
 ### 2. **Live2D SDK (Important, must be downloaded manually)**
@@ -142,7 +142,7 @@ cmake -S . -B build -G Ninja \
 
 ### 4. Coding & Commit Guidelines
 
-- Do not develop directly on `dev`; branch from `dev` into feature branches: `feat/xxx` (for example `feat/windows/audio`, `feat/model-sync`)
+- Do not develop directly on `dev`; branch from `dev` using common prefixes such as `feat/xxx`, `fix/xxx`, `chore/xxx`, `docs/xxx`, `refactor/xxx`, `perf/xxx`, `test/xxx`, `build/xxx`, `ci/xxx`, `hotfix/xxx`, or `revert/xxx`
 - Avoid committing development work directly on `main`
 - Keep changes focused and minimal
 - Avoid mixing unrelated refactors in one PR
@@ -166,13 +166,13 @@ python3 scripts/check_platform_macro_style.py --root src --platform all
 
 CI policy:
 
-- All `feat/*` branches run macro-style checks
-- `feat/windows*` branches run Windows macro checks
-- `feat/linux*` branches run Linux macro checks
-- `feat/macos*` branches run macOS macro checks
-- Other `feat/xxx` branches (cross-platform features) run `--platform all`
-- PRs targeting `dev` must come from `feat/*`
-- PRs from `feat/windows*` / `feat/linux*` / `feat/macos*` to `dev` also run a "diff scope guard": C/C++ changes must stay inside the corresponding platform macro-guarded regions to avoid accidental shared-code edits
+- Branches prefixed with `feat/*`, `fix/*`, `chore/*`, `docs/*`, `refactor/*`, `perf/*`, `test/*`, `build/*`, `ci/*`, `hotfix/*`, and `revert/*` run macro-style checks
+- Branches with `/windows` in the branch name run Windows macro checks
+- Branches with `/linux` in the branch name run Linux macro checks
+- Branches with `/macos` in the branch name run macOS macro checks
+- Other branches with the allowed prefixes run `--platform all`
+- PRs targeting `dev` must come from one of the allowed prefixes above
+- PRs containing `/windows`, `/linux`, or `/macos` in the head branch name and targeting `dev` also run a "diff scope guard": C/C++ changes must stay inside the corresponding platform macro-guarded regions to avoid accidental shared-code edits
 - If exceptions are needed, add path-glob entries (one per line) to `.github/platform-diff-allowlist.txt` for the platform branch diff-scope guard
 
 Recommended repository protection settings:
@@ -180,7 +180,30 @@ Recommended repository protection settings:
 - Block direct pushes to `dev`
 - Require pull requests and passing CI checks before merging into `dev`
 
-### 5. Pull Request Checklist
+### 5. Theme Extension Rules
+
+- Config semantics: use `theme` as the single theme key. This key is persisted by `SettingsManager` in runtime user configuration (for example, `Configs/config.json` under the user data directory), not in a versioned repository file; do not add or reintroduce `themeMode`
+- Theme ID registration:
+   - Register new IDs in `Theme::availableThemeIds()`
+   - Extend normalization/compat logic in `Theme::normalizeThemeId()` (and underlying implementation)
+   - If the project default theme changes, also update the default in `SettingsManager`
+- Theme apply dispatch:
+   - Add the new theme branch in `src/ui/theme/ThemeApi.cpp` for `installApplicationStyle()` / `applyTheme()`
+   - Keep runtime hot switching working from the settings window (no restart required)
+- SVG icon rules:
+   - Theme-specific SVG files must live under `res/icons/<theme-id>/`, for example `res/icons/era-style/`
+   - Every `Theme::IconToken` entry must have a mapping in `Theme::iconRelativePath()`
+   - Do not place theme-specific SVG files in the root `res/icons/` directory
+- Business-layer dependency rule:
+   - UI windows such as `ChatWindow` and `SettingsWindow` should depend only on the theme abstraction layer (`src/ui/theme/ThemeApi.hpp` and `src/ui/theme/ThemeWidgets.hpp`)
+   - Do not directly `#include` concrete theme implementation directories (for example, `ui/era-style/*`) in business window code; expose new theme capabilities through the abstraction layer first
+- Validation checklist for any new theme:
+   - Theme appears in the "Current Theme" dropdown and can be selected
+   - Colors and icons update immediately after switching (hot switch)
+   - Theme persists across app restart
+   - Missing single-icon resources have fallback behavior and do not crash the app
+
+### 6. Pull Request Checklist
 
 Please include:
 
@@ -189,7 +212,7 @@ Please include:
 - Local verification steps
 - Screenshots/recordings if UI behavior changed
 
-### 6. Security & Compliance Notes
+### 7. Security & Compliance Notes
 
 - Never commit secrets (API keys, tokens)
 - Model assets may have separate licenses; verify before submitting

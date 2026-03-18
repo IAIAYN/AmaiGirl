@@ -16,21 +16,21 @@
 
 - 构建环境：Xcode 15（macOS 14 SDK）或更高版本
 - 编译工具：CMake + Ninja + Clang
-- Qt：Qt 6（项目当前使用 Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia）
+- Qt：Qt 6（项目当前使用 Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg）
 
 #### Windows
 
 - 建议环境：Windows 10/11（x86_64）
 - 编译工具：Visual Studio 2022（MSVC v143）或更新版本，或在对应 MSVC 开发者环境中使用 CMake + Ninja
 - 当前不支持 MinGW/GCC：仓库使用的 Live2D Cubism Windows 库为 MSVC 产物
-- Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia），并确保 `windeployqt` 可用
+- Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg），并确保 `windeployqt` 可用
 - Live2D：请确认 `sdk/cubism/lib/windows/x86_64/<toolset>/` 下存在对应 MSVC 工具集的 `Live2DCubismCore_MD.lib` / `Live2DCubismCore_MDd.lib`
 
 #### Linux
 
 - 建议环境：Wayland 会话（X11 可作为回退后端）
 - 构建工具：CMake + Ninja + GCC/Clang
-- Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia）
+- Qt：Qt 6（Core / Gui / Widgets / OpenGL / OpenGLWidgets / Network / Multimedia / Svg）
 - 可选打包工具（AppImage）：`linuxdeploy`、`appimagetool`
 
 ### 2. **Live2D SDK（重要，必须自行下载）**
@@ -142,7 +142,7 @@ cmake -S . -B build -G Ninja \
 
 ### 4. 代码与提交规范
 
-- 不要直接在 `dev` 上开发；请从 `dev` 派生功能分支进行开发：`feat/xxx`（例如 `feat/windows/audio`、`feat/model-sync`）
+- 不要直接在 `dev` 上开发；请从 `dev` 派生分支进行开发，推荐使用常见前缀：`feat/xxx`、`fix/xxx`、`chore/xxx`、`docs/xxx`、`refactor/xxx`、`perf/xxx`、`test/xxx`、`build/xxx`、`ci/xxx`、`hotfix/xxx`、`revert/xxx`
 - 不建议直接在 `main` 分支上进行开发提交
 - 尽量保持改动聚焦、最小化
 - 不要在同一 PR 中混入无关重构
@@ -166,13 +166,13 @@ python3 scripts/check_platform_macro_style.py --root src --platform all
 
 CI 规则：
 
-- 所有 `feat/*` 分支都会执行宏规范检查
-- `feat/windows*` 分支自动执行 Windows 宏规范检查
-- `feat/linux*` 分支自动执行 Linux 宏规范检查
-- `feat/macos*` 分支自动执行 macOS 宏规范检查
-- 其他 `feat/xxx`（全平台特性）自动执行 `--platform all` 全量检查
-- 目标分支为 `dev` 的 PR，来源分支必须是 `feat/*`
-- 对 `feat/windows*` / `feat/linux*` / `feat/macos*` 到 `dev` 的 PR，会额外执行“改动范围守卫”：C/C++ 改动必须落在对应平台宏保护块内，避免误改共享代码
+- 以 `feat/*`、`fix/*`、`chore/*`、`docs/*`、`refactor/*`、`perf/*`、`test/*`、`build/*`、`ci/*`、`hotfix/*`、`revert/*` 开头的分支都会执行宏规范检查
+- 分支名中带有 `/windows` 的分支自动执行 Windows 宏规范检查
+- 分支名中带有 `/linux` 的分支自动执行 Linux 宏规范检查
+- 分支名中带有 `/macos` 的分支自动执行 macOS 宏规范检查
+- 其他上述前缀分支自动执行 `--platform all` 全量检查
+- 目标分支为 `dev` 的 PR，来源分支必须是上述允许前缀之一
+- 对名称包含 `/windows` / `/linux` / `/macos` 且合并到 `dev` 的 PR，会额外执行“改动范围守卫”：C/C++ 改动必须落在对应平台宏保护块内，避免误改共享代码
 - 若确需例外文件，可在 `.github/platform-diff-allowlist.txt` 中按行添加路径 glob 白名单（仅用于平台分支改动范围守卫）
 
 推荐在仓库设置中开启分支保护：
@@ -180,7 +180,30 @@ CI 规则：
 - 禁止直接 push 到 `dev`
 - 要求 PR 合并并通过 CI 检查后才能进入 `dev`
 
-### 5. Pull Request 建议
+### 5. 主题扩展规范（Theme）
+
+- 配置语义：主题配置键统一使用 `theme`，由 `SettingsManager` 读写到运行时用户配置（例如用户目录下的 `Configs/config.json`）；不要新增或回退到 `themeMode`
+- 主题 ID 注册：
+   - 在 `Theme::availableThemeIds()` 中注册新主题 ID
+   - 在 `Theme::normalizeThemeId()`（及其底层实现）中补充规范化与兼容逻辑
+   - 若需变更默认主题，再同步调整 `SettingsManager` 的默认值
+- 主题应用分发：
+   - 在 `src/ui/theme/ThemeApi.cpp` 的 `installApplicationStyle()` / `applyTheme()` 中增加新主题分支
+   - 保持设置页切换后可热更新（无需重启）
+- SVG 图标规范：
+   - 主题独有 SVG 必须放在 `res/icons/<theme-id>/`，例如 `res/icons/era-style/`
+   - `Theme::IconToken` 的每个条目都必须在 `Theme::iconRelativePath()` 中有映射
+   - 不要将主题专属 SVG 继续放在 `res/icons/` 根目录
+- 业务层依赖约束：
+   - `ChatWindow`、`SettingsWindow` 等业务窗口应仅依赖主题抽象层（`src/ui/theme/ThemeApi.hpp` 与 `src/ui/theme/ThemeWidgets.hpp`）
+   - 禁止在业务窗口中直接 `#include` 具体主题实现目录（例如 `ui/era-style/*`）；新增主题能力应先经主题抽象层暴露
+- 验证清单（新增主题必做）：
+   - 在“当前主题”下拉中可见并可切换
+   - 切换主题后颜色与图标即时生效（热切换）
+   - 重启应用后主题保持为上次选择
+   - 缺失单个图标资源时有回退策略，且应用不崩溃
+
+### 6. Pull Request 建议
 
 提交 PR 时建议包含：
 
@@ -189,7 +212,7 @@ CI 规则：
 - 本地验证方式（如何复现/验证）
 - 若有 UI 变化，附截图或录屏
 
-### 6. 安全与合规注意事项
+### 7. 安全与合规注意事项
 
 - 严禁提交私密密钥（API Key、Token）
 - 模型素材可能受单独条款约束，提交前请确认许可
