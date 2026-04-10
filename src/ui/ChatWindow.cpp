@@ -28,6 +28,7 @@
 #include <QScrollArea>
 #include <QScreen>
 #include <QSignalBlocker>
+#include <QHash>
 #include <QSet>
 #include <QTimer>
 #include <QTextEdit>
@@ -181,6 +182,7 @@ public:
     {
         setObjectName(QStringLiteral("chatMcpPopupRow"));
         setAttribute(Qt::WA_StyledBackground, true);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
         auto* layout = new QHBoxLayout(this);
         layout->setContentsMargins(10, 8, 10, 8);
@@ -285,6 +287,7 @@ public:
 
         m_contentWidget = new QWidget(m_scrollArea);
         m_contentWidget->setObjectName(QStringLiteral("chatMcpPopupContent"));
+        m_contentWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         m_scrollArea->setWidget(m_contentWidget);
 
         m_rowsLayout = new QVBoxLayout(m_contentWidget);
@@ -297,8 +300,43 @@ public:
 
     void setStatuses(const QList<McpServerStatus>& statuses)
     {
+        const bool structureChanged = hasSameServers(statuses) ? false : true;
         m_statuses = statuses;
-        rebuildRows();
+
+        if (structureChanged)
+            rebuildRows();
+        else
+            refreshRowStates();
+
+        updateGeometry();
+    }
+
+    QSize sizeHint() const override
+    {
+        if (m_rowsLayout)
+            const_cast<QVBoxLayout*>(m_rowsLayout)->activate();
+
+        int cardMargins = 0;
+        int cardSpacing = 0;
+        if (const QLayout* cardLayout = m_card ? m_card->layout() : nullptr)
+        {
+            const QMargins margins = cardLayout->contentsMargins();
+            cardMargins = margins.top() + margins.bottom();
+            cardSpacing = cardLayout->spacing();
+        }
+
+        const int titleHeight = m_titleLabel ? m_titleLabel->sizeHint().height() : 0;
+        const int contentHeight = m_rowsLayout ? m_rowsLayout->sizeHint().height() : 0;
+        const int scrollFrame = m_scrollArea ? (m_scrollArea->frameWidth() * 2) : 0;
+        const int scrollHeight = qMin(contentHeight + scrollFrame,
+                                      qMax(0, kMcpPopupMaxHeight - cardMargins - titleHeight - cardSpacing));
+
+        return QSize(kMcpPopupWidth, cardMargins + titleHeight + cardSpacing + scrollHeight);
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return sizeHint();
     }
 
     void popupNearAnchor(QWidget* anchor)
@@ -306,11 +344,25 @@ public:
         if (!anchor)
             return;
 
+        if (m_rowsLayout)
+        {
+            m_rowsLayout->invalidate();
+            m_rowsLayout->activate();
+        }
+
+        if (m_contentWidget)
+            m_contentWidget->updateGeometry();
+
+        if (m_scrollArea)
+            m_scrollArea->updateGeometry();
+
         adjustSize();
         QSize targetSize = sizeHint();
         targetSize.setWidth(qMax(targetSize.width(), kMcpPopupWidth));
         targetSize.setHeight(qMin(targetSize.height(), kMcpPopupMaxHeight));
         resize(targetSize);
+
+        syncContentWidth(targetSize.width());
 
         QPoint pos = anchor->mapToGlobal(QPoint(0, -height() - 8));
         if (QScreen* screen = QGuiApplication::screenAt(pos))
@@ -325,6 +377,7 @@ public:
         }
 
         move(pos);
+
         show();
         raise();
         activateWindow();
@@ -345,16 +398,79 @@ protected:
     }
 
 private:
+    int contentWidthForPopupWidth(int popupWidth) const
+    {
+        int rootMargins = 0;
+        if (const QLayout* rootLayout = layout())
+        {
+            const QMargins margins = rootLayout->contentsMargins();
+            rootMargins = margins.left() + margins.right();
+        }
+
+        int cardMargins = 0;
+        if (const QLayout* cardLayout = m_card ? m_card->layout() : nullptr)
+        {
+            const QMargins margins = cardLayout->contentsMargins();
+            cardMargins = margins.left() + margins.right();
+        }
+
+        const int scrollFrame = m_scrollArea ? (m_scrollArea->frameWidth() * 2) : 0;
+        return qMax(0, popupWidth - rootMargins - cardMargins - scrollFrame);
+    }
+
+    void syncContentWidth(int popupWidth)
+    {
+        if (!m_contentWidget)
+            return;
+        m_contentWidget->setFixedWidth(contentWidthForPopupWidth(popupWidth));
+    }
+
+    bool hasSameServers(const QList<McpServerStatus>& statuses) const
+    {
+        if (m_statuses.size() != statuses.size())
+            return false;
+
+        for (int i = 0; i < statuses.size(); ++i)
+        {
+            if (m_statuses.at(i).name != statuses.at(i).name)
+                return false;
+        }
+
+        return true;
+    }
+
     void refreshTexts()
     {
         if (m_titleLabel)
             m_titleLabel->setText(QCoreApplication::translate("ChatWindow", "MCP 列表"));
     }
 
+    void refreshRowStates()
+    {
+        if (!m_rowsLayout)
+            return;
+
+        for (const McpServerStatus& status : m_statuses)
+        {
+            if (auto* row = m_rowByName.value(status.name, nullptr))
+                row->setStatus(status);
+        }
+
+        m_rowsLayout->invalidate();
+        m_rowsLayout->activate();
+        if (m_contentWidget)
+            m_contentWidget->updateGeometry();
+        syncContentWidth(qMax(width(), kMcpPopupWidth));
+        if (m_scrollArea)
+            m_scrollArea->updateGeometry();
+    }
+
     void rebuildRows()
     {
         if (!m_rowsLayout)
             return;
+
+        m_rowByName.clear();
 
         while (QLayoutItem* item = m_rowsLayout->takeAt(0))
         {
@@ -370,6 +486,11 @@ private:
             emptyLabel->setWordWrap(true);
             m_rowsLayout->addWidget(emptyLabel, 0, Qt::AlignLeft | Qt::AlignTop);
             m_rowsLayout->addStretch(1);
+            m_rowsLayout->activate();
+            m_contentWidget->updateGeometry();
+            syncContentWidth(qMax(width(), kMcpPopupWidth));
+            if (m_scrollArea)
+                m_scrollArea->updateGeometry();
             return;
         }
 
@@ -379,8 +500,15 @@ private:
             row->setStatus(status);
             connect(row, &McpServerToggleRow::enabledChanged, this, &McpServerPopup::enabledChanged);
             m_rowsLayout->addWidget(row);
+            m_rowByName.insert(status.name, row);
         }
         m_rowsLayout->addStretch(1);
+
+        m_rowsLayout->activate();
+        m_contentWidget->updateGeometry();
+        syncContentWidth(qMax(width(), kMcpPopupWidth));
+        if (m_scrollArea)
+            m_scrollArea->updateGeometry();
     }
 
 Q_SIGNALS:
@@ -392,6 +520,7 @@ private:
     QScrollArea* m_scrollArea{nullptr};
     QWidget* m_contentWidget{nullptr};
     QVBoxLayout* m_rowsLayout{nullptr};
+    QHash<QString, McpServerToggleRow*> m_rowByName;
     QList<McpServerStatus> m_statuses;
 };
 
@@ -884,7 +1013,11 @@ public:
     void updateMcpPopup()
     {
         if (mcpPopup)
+        {
             mcpPopup->setStatuses(mcpStatuses);
+            if (mcpPopup->isVisible() && mcpBtn)
+                mcpPopup->popupNearAnchor(mcpBtn);
+        }
     }
 
     static bool isVisibleMessageObject(const QJsonObject& o)

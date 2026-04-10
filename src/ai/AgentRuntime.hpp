@@ -59,7 +59,7 @@ private:
     State m_state{State::Idle};
     bool m_hasAssistantPlaceholder{false};
     QJsonArray m_messages;
-    
+
     // TTS streaming state
     QString m_pendingFinalText;
     QString m_pendingStreamText;

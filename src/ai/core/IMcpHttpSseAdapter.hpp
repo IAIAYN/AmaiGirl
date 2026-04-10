@@ -1,7 +1,7 @@
 #pragma once
 
-#include "IMcpAdapter.hpp"
-#include "McpServerConfig.hpp"
+#include "ai/core/IMcpAdapter.hpp"
+#include "ai/core/McpServerConfig.hpp"
 
 /**
  * HTTP/SSE based MCP adapter interface.

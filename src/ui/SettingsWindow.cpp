@@ -45,7 +45,6 @@
 #include <QPlainTextEdit>
 #include <QScrollArea>
 #include <QDialog>
-#include <QVBoxLayout>
 #include <QLocale>
 #include <QStyleHints>
 #include <QtGlobal>

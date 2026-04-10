@@ -30,6 +30,7 @@
 #include <QDebug>
 #include <QMetaObject>
 #include <QPointer>
+#include <QThread>
 #include <QApplication>
 #include <QRegularExpression>
 #include <QSet>
@@ -37,8 +38,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <future>
-#include <thread>
 
 namespace {
 QJsonObject fallbackJsonSchema()
@@ -1418,15 +1417,6 @@ void ChatController::reloadMcpTools()
             continue;
         }
 
-        if (sameConfig && hasPreviousStatus && previousStatusCache.value(serverName).state == McpServerRuntimeState::Unavailable)
-        {
-            status = previousStatusCache.value(serverName);
-            status.name = serverName;
-            status.enabled = true;
-            pendingStatusCache.insert(serverName, status);
-            continue;
-        }
-
         status.state = McpServerRuntimeState::Starting;
         pendingStatusCache.insert(serverName, status);
         serversToReload.push_back(serverConfig);
@@ -1437,13 +1427,13 @@ void ChatController::reloadMcpTools()
 
     QPointer<ChatController> guarded(this);
 
-    std::thread([guarded,
-                 serverConfigs,
-                 serversToReload,
-                 enabledServerCount,
-                 nextConfigCache,
-                 nextRawToolsCache,
-                 pendingStatusCache] () mutable {
+    QThread* reloadThread = QThread::create([guarded,
+                                             serverConfigs,
+                                             serversToReload,
+                                             enabledServerCount,
+                                             nextConfigCache,
+                                             nextRawToolsCache,
+                                             pendingStatusCache]() mutable {
         QJsonArray mergedTools;
         QHash<QString, QPair<QString, QString>> toolRoutes;
         QHash<QString, QJsonArray> finalRawToolsCache = nextRawToolsCache;
@@ -1456,36 +1446,27 @@ void ChatController::reloadMcpTools()
             QString error;
         };
 
-        std::vector<std::future<ServerLoadResult>> futures;
-        futures.reserve(static_cast<size_t>(serversToReload.size()));
-
         for (const McpServerConfig& serverConfig : serversToReload)
         {
-            futures.emplace_back(std::async(std::launch::async, [serverConfig]() {
-                ServerLoadResult out;
-                out.serverName = serverConfig.name;
+            ServerLoadResult loaded;
+            loaded.serverName = serverConfig.name;
 
-                QString initError;
-                std::unique_ptr<IMcpAdapter> adapter = IMcpAdapter::create(serverConfig, &initError);
-                if (!adapter)
-                {
-                    out.error = initError.isEmpty()
-                        ? QStringLiteral("create adapter failed")
-                        : initError;
-                    return out;
-                }
-
+            QString initError;
+            std::unique_ptr<IMcpAdapter> adapter = IMcpAdapter::create(serverConfig, &initError);
+            if (!adapter)
+            {
+                loaded.error = initError.isEmpty()
+                    ? QStringLiteral("create adapter failed")
+                    : initError;
+            }
+            else
+            {
                 QString toolsError;
-                out.tools = adapter->listTools(&toolsError);
+                loaded.tools = adapter->listTools(&toolsError);
                 if (!toolsError.isEmpty())
-                    out.error = toolsError;
-                return out;
-            }));
-        }
+                    loaded.error = toolsError;
+            }
 
-        for (auto& f : futures)
-        {
-            const ServerLoadResult loaded = f.get();
             if (finalStatusCache.contains(loaded.serverName))
             {
                 McpServerStatus status = finalStatusCache.value(loaded.serverName);
@@ -1531,7 +1512,9 @@ void ChatController::reloadMcpTools()
                                    finalRawToolsCache,
                                    finalStatusCache);
         }, Qt::QueuedConnection);
-    }).detach();
+    });
+    QObject::connect(reloadThread, &QThread::finished, reloadThread, &QObject::deleteLater);
+    reloadThread->start();
 }
 
 void ChatController::applyMcpTools(const QJsonArray& tools,
@@ -1646,7 +1629,7 @@ void ChatController::onRuntimeToolCallRequested(const QString& toolName, const Q
         m_toolRegistry->resolveRoute(toolName, &resolvedServerName, &resolvedRawToolName);
 
     QPointer<ChatController> guarded(this);
-    std::thread([guarded, toolName, toolInput, resolvedServerName, resolvedRawToolName] {
+    QThread* toolThread = QThread::create([guarded, toolName, toolInput, resolvedServerName, resolvedRawToolName] {
         QString errorMessage;
         QString result;
 
@@ -1727,7 +1710,9 @@ void ChatController::onRuntimeToolCallRequested(const QString& toolName, const Q
                 return;
             guarded->m_runtime->submitToolResult(toolName, toolInput, result);
         }, Qt::QueuedConnection);
-    }).detach();
+    });
+    QObject::connect(toolThread, &QThread::finished, toolThread, &QObject::deleteLater);
+    toolThread->start();
 }
 
 bool ChatController::hasActiveOutputPresentation() const

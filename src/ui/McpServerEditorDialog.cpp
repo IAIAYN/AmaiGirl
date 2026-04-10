@@ -15,9 +15,8 @@
 #include <QPushButton>
 #include <QApplication>
 #include <QStackedWidget>
+#include <QThread>
 #include <QVBoxLayout>
-
-#include <thread>
 
 namespace {
 QMap<QString, QString> parseHeaders(const QString& text)
@@ -40,7 +39,7 @@ QMap<QString, QString> parseHeaders(const QString& text)
             headers.insert(key, value);
     }
     return headers;
-}  // namespace
+}
 
 QMap<QString, QString> parseEnvLines(const QString& text)
 {
@@ -99,7 +98,7 @@ QString headersToText(const QMap<QString, QString>& headers)
         lines.push_back(it.key() + QStringLiteral(": ") + it.value());
     return lines.join('\n');
 }
-}
+}  // namespace
 
 McpServerEditorDialog::McpServerEditorDialog(QWidget* parent)
     : QDialog(parent)
@@ -305,7 +304,7 @@ void McpServerEditorDialog::onTestConnection()
     setTestUiState(true);
 
     QPointer<McpServerEditorDialog> guarded(this);
-    std::thread([guarded, config] {
+    QThread* testThread = QThread::create([guarded, config] {
         TestConnectionResult result;
 
         QString error;
@@ -343,7 +342,9 @@ void McpServerEditorDialog::onTestConnection()
                 return;
             guarded->onTestConnectionFinished(result);
         }, Qt::QueuedConnection);
-    }).detach();
+    });
+    QObject::connect(testThread, &QThread::finished, testThread, &QObject::deleteLater);
+    testThread->start();
 }
 
 void McpServerEditorDialog::onTestConnectionFinished(const TestConnectionResult& result)
