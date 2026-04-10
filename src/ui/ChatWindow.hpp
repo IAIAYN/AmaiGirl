@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ai/core/McpServerStatus.hpp"
+
 #include <QMainWindow>
 #include <QScopedPointer>
 #include <QString>
@@ -28,10 +30,17 @@ public:
 
 Q_SIGNALS:
     void requestSendMessage(const QString& modelFolder, const QString& userText);
+    void requestAbortCurrentTask();
     void requestClearChat(const QString& modelFolder);
+    void requestRefreshMcpServerStatuses();
+    void requestSetMcpServerEnabled(const QString& serverName, bool enabled);
 
 public Q_SLOTS:
+    void setPersistenceEnabled(bool enabled);
+    void setMcpServerStatuses(const QList<McpServerStatus>& statuses);
     void setBusy(bool busy);
+    void sealCurrentAiBubble();
+    void cancelCurrentAiDraftBubble();
     void appendUserMessage(const QString& text);
     void appendAiMessageStart();
     void appendAiToken(const QString& token);

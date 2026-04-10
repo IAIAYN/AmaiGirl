@@ -12,6 +12,7 @@ namespace ThemeWidgets
 {
 using Button = EraButton;
 using ChatBubbleBox = EraChatBubbleBox;
+using ChatSelectionCheckBox = EraChatSelectionCheckBox;
 using ChatBubbleTextView = EraChatBubbleTextView;
 using ChatComposerEdit = EraChatComposerEdit;
 using ChatListWidget = EraChatListWidget;

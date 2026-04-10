@@ -2,6 +2,13 @@
 
 #include "ai/OpenAIChatClient.hpp"
 #include "ai/OpenAITtsClient.hpp"
+#include "ai/AgentRuntime.hpp"
+#include "ai/ConversationRepository.hpp"
+#include "ai/core/IChatProvider.hpp"
+#include "ai/core/ITtsProvider.hpp"
+#include "ai/core/IMcpAdapter.hpp"
+#include "ai/core/McpServerConfig.hpp"
+#include "ai/core/ToolRegistry.hpp"
 
 #include "common/SettingsManager.hpp"
 #include "ui/ChatWindow.hpp"
@@ -20,75 +27,321 @@
 #include <QUrl>
 #include <QByteArrayView>
 #include <QProcessEnvironment>
+#include <QDebug>
+#include <QMetaObject>
+#include <QPointer>
+#include <QApplication>
+#include <QRegularExpression>
+#include <QSet>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <future>
+#include <thread>
 
 namespace {
-QJsonArray loadMessages(const QString& modelFolder)
+QJsonObject fallbackJsonSchema()
 {
-    QFile f(SettingsManager::instance().chatPathForModel(modelFolder));
-    if (!f.exists()) return {};
-    if (!f.open(QIODevice::ReadOnly)) return {};
-    QJsonParseError e;
-    const auto doc = QJsonDocument::fromJson(f.readAll(), &e);
-    if (e.error != QJsonParseError::NoError || !doc.isObject()) return {};
-    return doc.object().value("messages").toArray();
+    QJsonObject schema;
+    schema.insert(QStringLiteral("type"), QStringLiteral("object"));
+    schema.insert(QStringLiteral("properties"), QJsonObject{});
+    return schema;
 }
 
-void saveMessages(const QString& modelFolder, const QJsonArray& messages)
+QString sanitizeToolToken(const QString& raw)
 {
-    QDir dir(SettingsManager::instance().chatsDir());
-    if (!dir.exists()) dir.mkpath(".");
+    QString out = raw.trimmed();
+    out.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_-]")), QStringLiteral("_"));
+    if (out.isEmpty())
+        out = QStringLiteral("tool");
+    const QChar first = out.front();
+    if (!(first.isLetter() || first == QLatin1Char('_')))
+        out.prepend(QStringLiteral("t_"));
+    return out;
+}
 
-    QJsonObject o;
-    o["messages"] = messages;
+QString buildSafeExposedToolName(const QString& serverName, const QString& toolName, QSet<QString>* usedNames)
+{
+    const QString server = sanitizeToolToken(serverName);
+    const QString tool = sanitizeToolToken(toolName);
 
-    QFile f(SettingsManager::instance().chatPathForModel(modelFolder));
-    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    QString name = QStringLiteral("mcp_%1__%2").arg(server, tool);
+    if (name.size() > 64)
     {
-        f.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+        const uint h = qHash(serverName + QStringLiteral("::") + toolName);
+        name = QStringLiteral("mcp_%1__%2_%3")
+            .arg(server.left(16), tool.left(24), QString::number(h, 16));
     }
+
+    if (usedNames)
+    {
+        QString unique = name;
+        int idx = 1;
+        while (usedNames->contains(unique))
+        {
+            unique = QStringLiteral("%1_%2").arg(name.left(60), QString::number(idx));
+            ++idx;
+        }
+        usedNames->insert(unique);
+        return unique;
+    }
+
+    return name;
 }
 
-QString latestAssistantMessageFromDisk(const QString& modelFolder)
+bool tryResolveFromExposedNameHeuristic(const QString& exposedToolName,
+                                        const QList<McpServerConfig>& serverConfigs,
+                                        QString* serverName,
+                                        QString* rawToolName)
 {
-    QFile f(SettingsManager::instance().chatPathForModel(modelFolder));
-    if (!f.exists()) return {};
-    if (!f.open(QIODevice::ReadOnly)) return {};
-
-    QJsonParseError e;
-    const auto doc = QJsonDocument::fromJson(f.readAll(), &e);
-    if (e.error != QJsonParseError::NoError || !doc.isObject()) return {};
-
-    const QJsonArray messages = doc.object().value("messages").toArray();
-    for (int i = messages.size() - 1; i >= 0; --i)
+    for (const McpServerConfig& cfg : serverConfigs)
     {
-        const auto o = messages.at(i).toObject();
-        if (o.value("role").toString() == QStringLiteral("assistant"))
+        const QString prefix = QStringLiteral("mcp_") + sanitizeToolToken(cfg.name) + QStringLiteral("__");
+        if (!exposedToolName.startsWith(prefix))
+            continue;
+
+        const QString candidateTool = exposedToolName.mid(prefix.size()).trimmed();
+        if (candidateTool.isEmpty())
+            continue;
+
+        if (serverName)
+            *serverName = cfg.name;
+        if (rawToolName)
+            *rawToolName = candidateTool;
+        return true;
+    }
+
+    return false;
+}
+
+QJsonObject toOpenAiFunctionTool(const QJsonObject& rawTool, const QString& exposedName)
+{
+
+    if (rawTool.value(QStringLiteral("function")).isObject())
+    {
+        QJsonObject fnObj = rawTool.value(QStringLiteral("function")).toObject();
+        const QString rawName = fnObj.value(QStringLiteral("name")).toString().trimmed();
+        if (rawName.isEmpty())
+            return QJsonObject{};
+
+        fnObj.insert(QStringLiteral("name"), exposedName);
+        if (!fnObj.value(QStringLiteral("parameters")).isObject())
         {
-            return o.value("content").toString();
+            if (rawTool.value(QStringLiteral("inputSchema")).isObject())
+                fnObj.insert(QStringLiteral("parameters"), rawTool.value(QStringLiteral("inputSchema")).toObject());
+            else if (rawTool.value(QStringLiteral("input_schema")).isObject())
+                fnObj.insert(QStringLiteral("parameters"), rawTool.value(QStringLiteral("input_schema")).toObject());
+            else
+                fnObj.insert(QStringLiteral("parameters"), fallbackJsonSchema());
+        }
+
+        QJsonObject toolObj;
+        toolObj.insert(QStringLiteral("type"), QStringLiteral("function"));
+        toolObj.insert(QStringLiteral("function"), fnObj);
+        return toolObj;
+    }
+
+    const QString rawName = rawTool.value(QStringLiteral("name")).toString().trimmed();
+    if (rawName.isEmpty())
+        return QJsonObject{};
+
+    QJsonObject fnObj;
+    fnObj.insert(QStringLiteral("name"), exposedName);
+
+    const QString desc = rawTool.value(QStringLiteral("description")).toString();
+    if (!desc.isEmpty())
+        fnObj.insert(QStringLiteral("description"), desc);
+
+    if (rawTool.value(QStringLiteral("inputSchema")).isObject())
+        fnObj.insert(QStringLiteral("parameters"), rawTool.value(QStringLiteral("inputSchema")).toObject());
+    else if (rawTool.value(QStringLiteral("input_schema")).isObject())
+        fnObj.insert(QStringLiteral("parameters"), rawTool.value(QStringLiteral("input_schema")).toObject());
+    else if (rawTool.value(QStringLiteral("parameters")).isObject())
+        fnObj.insert(QStringLiteral("parameters"), rawTool.value(QStringLiteral("parameters")).toObject());
+    else
+        fnObj.insert(QStringLiteral("parameters"), fallbackJsonSchema());
+
+    QJsonObject toolObj;
+    toolObj.insert(QStringLiteral("type"), QStringLiteral("function"));
+    toolObj.insert(QStringLiteral("function"), fnObj);
+    return toolObj;
+}
+
+QList<McpServerStatus> buildMcpStatuses(const QList<McpServerConfig>& serverConfigs,
+                                        McpServerRuntimeState enabledState,
+                                        const QHash<QString, QString>& details = {})
+{
+    QList<McpServerStatus> statuses;
+    statuses.reserve(serverConfigs.size());
+    for (const McpServerConfig& serverConfig : serverConfigs)
+    {
+        McpServerStatus status;
+        status.name = serverConfig.name;
+        status.enabled = serverConfig.enabled;
+        status.state = serverConfig.enabled ? enabledState : McpServerRuntimeState::Disabled;
+        status.detail = details.value(serverConfig.name);
+        statuses.push_back(status);
+    }
+    return statuses;
+}
+
+bool sameMcpServerConfig(const McpServerConfig& lhs, const McpServerConfig& rhs)
+{
+    return lhs.name == rhs.name
+        && lhs.type == rhs.type
+        && lhs.enabled == rhs.enabled
+        && lhs.timeoutMs == rhs.timeoutMs
+        && lhs.command == rhs.command
+        && lhs.args == rhs.args
+        && lhs.env == rhs.env
+        && lhs.url == rhs.url
+        && lhs.headers == rhs.headers;
+}
+
+QList<McpServerStatus> buildMcpStatusesFromCache(const QList<McpServerConfig>& serverConfigs,
+                                                 const QHash<QString, McpServerStatus>& statusCache)
+{
+    QList<McpServerStatus> statuses;
+    statuses.reserve(serverConfigs.size());
+
+    for (const McpServerConfig& serverConfig : serverConfigs)
+    {
+        McpServerStatus status;
+        status.name = serverConfig.name;
+        status.enabled = serverConfig.enabled;
+
+        if (!serverConfig.enabled)
+        {
+            status.state = McpServerRuntimeState::Disabled;
+        }
+        else if (statusCache.contains(serverConfig.name))
+        {
+            status = statusCache.value(serverConfig.name);
+            status.name = serverConfig.name;
+            status.enabled = true;
+        }
+        else
+        {
+            status.state = McpServerRuntimeState::Starting;
+        }
+
+        statuses.push_back(status);
+    }
+
+    return statuses;
+}
+
+void composeMergedMcpTools(const QList<McpServerConfig>& serverConfigs,
+                          const QHash<QString, QJsonArray>& rawToolsCache,
+                          QJsonArray* mergedTools,
+                          QHash<QString, QPair<QString, QString>>* toolRoutes)
+{
+    if (!mergedTools || !toolRoutes)
+        return;
+
+    *mergedTools = QJsonArray{};
+    toolRoutes->clear();
+
+    QSet<QString> usedExposedNames;
+    for (const McpServerConfig& serverConfig : serverConfigs)
+    {
+        if (!serverConfig.enabled)
+            continue;
+
+        const auto cachedToolsIt = rawToolsCache.constFind(serverConfig.name);
+        if (cachedToolsIt == rawToolsCache.constEnd())
+            continue;
+
+        for (const QJsonValue& toolValue : cachedToolsIt.value())
+        {
+            if (!toolValue.isObject())
+                continue;
+
+            const QJsonObject rawToolObj = toolValue.toObject();
+            QString rawToolName;
+            if (rawToolObj.value(QStringLiteral("function")).isObject())
+                rawToolName = rawToolObj.value(QStringLiteral("function")).toObject().value(QStringLiteral("name")).toString().trimmed();
+            else
+                rawToolName = rawToolObj.value(QStringLiteral("name")).toString().trimmed();
+
+            if (rawToolName.isEmpty())
+                continue;
+
+            const QString exposedName = buildSafeExposedToolName(serverConfig.name, rawToolName, &usedExposedNames);
+            const QJsonObject toolObj = toOpenAiFunctionTool(rawToolObj, exposedName);
+            if (toolObj.isEmpty())
+                continue;
+
+            mergedTools->append(toolObj);
+            toolRoutes->insert(exposedName, qMakePair(serverConfig.name, rawToolName));
         }
     }
-    return {};
 }
 } // namespace
 
 ChatController::ChatController(QObject* parent)
     : QObject(parent)
 {
+    qRegisterMetaType<McpServerStatus>("McpServerStatus");
+    qRegisterMetaType<QList<McpServerStatus>>("QList<McpServerStatus>");
+
+    m_toolRegistry = std::make_unique<ToolRegistry>();
     m_lipDebug = (QProcessEnvironment::systemEnvironment().value(QStringLiteral("AMAI_LIPSYNC_DEBUG")) == QStringLiteral("1"));
+    m_useAgentRuntime = true;
 
-    m_client = new OpenAIChatClient(this);
-    m_tts = new OpenAITtsClient(this);
+    auto* client = new OpenAIChatClient(this);
+    m_client = client;
+    auto* tts = new OpenAITtsClient(this);
+    m_tts = tts;
+    reloadMcpTools();
+    if (m_useAgentRuntime)
+    {
+        m_runtime = new AgentRuntime(this);
+        m_runtime->setChatProvider(m_client);
+        m_runtime->setConversationStore(nullptr);
+        m_runtime->setTtsProvider(m_tts);
 
-    connect(m_client, &OpenAIChatClient::tokenReceived, this, &ChatController::onClientToken);
-    connect(m_client, &OpenAIChatClient::finished, this, &ChatController::onClientFinished);
-    connect(m_client, &OpenAIChatClient::errorOccurred, this, &ChatController::onClientError);
+        connect(m_runtime, &AgentRuntime::requestAppendUserMessage, this, [this](const QString& text){
+            if (m_chatWindow) m_chatWindow->appendUserMessage(text);
+        });
+        connect(m_runtime, &AgentRuntime::requestAppendAiMessageStart, this, [this]{
+            if (m_chatWindow) m_chatWindow->appendAiMessageStart();
+        });
+        connect(m_runtime, &AgentRuntime::requestSetBusy, this, [this](bool busy){
+            m_runtimeBusyRequested = busy;
+            syncChatBusyUi();
+        });
+        connect(m_runtime, &AgentRuntime::requestConversationCleared, this, [this](const QString& modelFolder){
+            if (m_chatWindow) m_chatWindow->loadFromDisk(modelFolder);
+        });
+        connect(m_runtime, &AgentRuntime::requestStartTts, this, &ChatController::onRuntimeRequestStartTts);
+        connect(m_runtime, &AgentRuntime::requestStartPlayback, this, &ChatController::onRuntimeRequestStartPlayback);
+        connect(m_runtime, &AgentRuntime::requestStartPacedTextReveal, this, &ChatController::onRuntimeRequestStartPacedTextReveal);
+        connect(m_runtime, &AgentRuntime::toolCallRequested, this, &ChatController::onRuntimeToolCallRequested);
+        connect(m_runtime, &AgentRuntime::stateChanged, this, [](IAgentRuntime::State st){
+            qDebug().noquote() << "[AgentRuntime] state=" << int(st);
+        });
+    }
 
-    connect(m_tts, &OpenAITtsClient::finished, this, &ChatController::onTtsFinished);
-    connect(m_tts, &OpenAITtsClient::errorOccurred, this, &ChatController::onTtsError);
+    if (m_useAgentRuntime && m_runtime)
+    {
+        connect(m_runtime, &AgentRuntime::tokenReceived, this, &ChatController::onClientToken);
+        connect(m_runtime, &AgentRuntime::finished, this, &ChatController::onClientFinished);
+        connect(m_runtime, &AgentRuntime::errorOccurred, this, &ChatController::onClientError);
+    }
+    else
+    {
+        connect(client, &OpenAIChatClient::tokenReceived, this, &ChatController::onClientToken);
+        connect(client, &OpenAIChatClient::finished, this, &ChatController::onClientFinished);
+        connect(client, &OpenAIChatClient::errorOccurred, this, &ChatController::onClientError);
+    }
+
+    if (!(m_useAgentRuntime && m_runtime))
+    {
+        connect(tts, &OpenAITtsClient::finished, this, &ChatController::onTtsFinished);
+        connect(tts, &OpenAITtsClient::errorOccurred, this, &ChatController::onTtsError);
+    }
 
     m_audioOut = new QAudioOutput(this);
     m_player = new QMediaPlayer(this);
@@ -119,8 +372,8 @@ ChatController::ChatController(QObject* parent)
             }
             m_wavLip.reset();
 
-            // Ensure UI unlocks when audio finishes.
-            if (m_chatWindow) m_chatWindow->setBusy(false);
+            // Ensure UI lock state follows runtime + output presentation.
+            syncChatBusyUi();
         }
     });
 
@@ -159,7 +412,7 @@ ChatController::ChatController(QObject* parent)
         if (m_pacedRevealChars >= fullLen)
         {
             m_pacedRevealTimer.stop();
-            // Final persistence must happen once (on playback stop).
+            m_chatWindow->sealCurrentAiBubble();
         }
     });
 }
@@ -179,12 +432,22 @@ void ChatController::setChatWindow(ChatWindow* wnd)
     if (!m_chatWindow)
         return;
 
+    // In runtime mode, AgentRuntime is the single source of truth for chat persistence.
+    // ChatWindow should only render UI and never write chat json directly.
+    m_chatWindow->setPersistenceEnabled(!(m_useAgentRuntime && m_runtime));
+
     connect(m_chatWindow, &ChatWindow::requestSendMessage, this, &ChatController::onSendRequested);
+    connect(m_chatWindow, &ChatWindow::requestAbortCurrentTask, this, &ChatController::onAbortRequested);
     connect(m_chatWindow, &ChatWindow::requestClearChat, this, &ChatController::onClearRequested);
+    connect(m_chatWindow, &ChatWindow::requestRefreshMcpServerStatuses, this, &ChatController::refreshMcpServerStatuses);
+    connect(m_chatWindow, &ChatWindow::requestSetMcpServerEnabled, this, &ChatController::setMcpServerEnabled);
+    connect(this, &ChatController::mcpServerStatusesChanged, m_chatWindow, &ChatWindow::setMcpServerStatuses);
 
     // sync current model context to window
     if (!m_modelFolder.isEmpty())
         m_chatWindow->setCurrentModel(m_modelFolder, m_modelDir);
+
+    m_chatWindow->setMcpServerStatuses(m_mcpStatuses);
 }
 
 void ChatController::setRenderer(Renderer* renderer)
@@ -194,7 +457,7 @@ void ChatController::setRenderer(Renderer* renderer)
 
 void ChatController::refreshTtsConfig()
 {
-    OpenAITtsClient::TtsConfig cfg;
+    ITtsProvider::TtsConfig cfg;
     cfg.baseUrl = SettingsManager::instance().ttsBaseUrl();
     cfg.apiKey = SettingsManager::instance().ttsApiKey();
     cfg.model = SettingsManager::instance().ttsModel();
@@ -332,7 +595,10 @@ float ChatController::updateLipRmsFromClock()
     double sum2 = 0.0;
     qsizetype n = 0;
 
-    for (qsizetype i = start; i < end; ++i)
+    const qsizetype frames = end - start;
+    const qsizetype stride = (frames > 2048) ? 2 : 1;
+
+    for (qsizetype i = start; i < end; i += stride)
     {
         double acc = 0.0;
         for (int c = 0; c < channels; ++c)
@@ -446,15 +712,16 @@ void ChatController::onLipTimer()
 void ChatController::onClientToken(const QString& token)
 {
     if (!m_chatWindow) return;
-    if (!SettingsManager::instance().aiStreamEnabled()) return;
+    if (!m_streamEnabledForCurrentReply) return;
+
+    // Runtime handles TTS-paced reveal by itself; skip immediate token painting
+    // to avoid duplicated "stream once, then stream again with audio" effect.
+    if (m_useAgentRuntime && m_runtime && m_ttsEnabledForCurrentReply)
+        return;
 
     // If TTS is enabled, we pace text streaming with audio playback (see onTtsFinished)
     // to avoid text finishing before speech starts.
-    refreshTtsConfig();
-    const auto tcfg = m_tts->config();
-    const bool ttsEnabled = !tcfg.baseUrl.trimmed().isEmpty();
-
-    if (ttsEnabled)
+    if (m_ttsEnabledForCurrentReply)
     {
         // Collect tokens; we'll reveal them later when audio starts.
         m_pendingStreamText += token;
@@ -470,16 +737,41 @@ void ChatController::onClientFinished(const QString& fullText)
     if (!m_chatWindow)
         return;
 
+    if (m_useAgentRuntime && m_runtime)
+    {
+        const bool streamEnabled = m_streamEnabledForCurrentReply;
+        const bool ttsEnabled = m_ttsEnabledForCurrentReply;
+
+        if (streamEnabled && !ttsEnabled)
+        {
+            // Token stream has already filled the current draft bubble.
+            m_chatWindow->sealCurrentAiBubble();
+        }
+        else if (streamEnabled && ttsEnabled)
+        {
+            // paced reveal path: do not finalize here; timer handles bubble content and sealing.
+            if (!m_pacedRevealTimer.isActive())
+                m_chatWindow->sealCurrentAiBubble();
+        }
+        else if (!fullText.trimmed().isEmpty())
+        {
+            // non-stream final response segment
+            m_chatWindow->finalizeAssistantMessage(fullText, /*ensureBubbleExists*/true);
+        }
+
+        // Keep UI and input lock state aligned with runtime state machine.
+        m_pendingFinalText.clear();
+        m_runtimeBusyRequested = m_runtime->isBusy();
+        syncChatBusyUi();
+        return;
+    }
+
     // If TTS is enabled, defer finalizing/persisting the assistant message until
     // we are ready to start playback. This avoids writing the same assistant
     // message twice (onClientFinished + onTtsFinished).
-    refreshTtsConfig();
-    const auto tcfg = m_tts->config();
-    const bool ttsEnabled = !tcfg.baseUrl.trimmed().isEmpty();
-
     m_pendingFinalText = fullText;
 
-    if (ttsEnabled)
+    if (m_ttsEnabledForCurrentReply)
     {
         const QString outPath = cacheAudioPathForModel(m_modelFolder);
         m_tts->startSpeech(fullText, outPath);
@@ -541,20 +833,97 @@ void ChatController::onSendRequested(const QString& modelFolder, const QString& 
     if (modelFolder.isEmpty() || userText.trimmed().isEmpty()) return;
 
     m_modelFolder = modelFolder;
+    if (m_mcpToolsDirty || m_mcpToolsReloadInProgress)
+    {
+        m_pendingSendModelFolder = modelFolder;
+        m_pendingSendText = userText;
+        m_hasPendingSend = true;
 
-    if (m_client->isBusy() || m_tts->isBusy() || (m_player && m_player->playbackState() == QMediaPlayer::PlayingState))
+        if (m_mcpToolsDirty)
+            reloadMcpTools();
+        return;
+    }
+
+    dispatchSendNow(modelFolder, userText);
+}
+
+void ChatController::onAbortRequested()
+{
+    if (!m_chatWindow)
+        return;
+
+    m_pendingSendModelFolder.clear();
+    m_pendingSendText.clear();
+    m_hasPendingSend = false;
+
+    stopPlayback();
+    if (m_pacedRevealTimer.isActive())
+        m_pacedRevealTimer.stop();
+    m_pacedFullText.clear();
+    m_pacedRevealChars = 0;
+
+    if (m_client)
+        m_client->cancel();
+    if (m_tts)
+        m_tts->cancel();
+    if (m_useAgentRuntime && m_runtime)
+        m_runtime->cancel();
+
+    m_pendingFinalText.clear();
+    m_pendingStreamText.clear();
+    m_runtimeBusyRequested = false;
+
+    if (m_chatWindow)
+    {
+        if (m_chatWindow->currentAssistantDraft().trimmed().isEmpty())
+            m_chatWindow->cancelCurrentAiDraftBubble();
+        else
+            m_chatWindow->sealCurrentAiBubble();
+    }
+
+    syncChatBusyUi();
+}
+
+void ChatController::dispatchSendNow(const QString& modelFolder, const QString& userText)
+{
+    if (!m_chatWindow) return;
+    if (modelFolder.isEmpty() || userText.trimmed().isEmpty()) return;
+
+    if (m_useAgentRuntime && m_runtime)
+    {
+        m_runtime->setModelContext(modelFolder, m_modelDir);
+
+        m_streamEnabledForCurrentReply = SettingsManager::instance().aiStreamEnabled();
+        m_ttsEnabledForCurrentReply = !SettingsManager::instance().ttsBaseUrl().trimmed().isEmpty();
+
+        if (m_runtime->isBusy())
+        {
+            m_chatWindow->setBusy(false);
+            return;
+        }
+
+        stopPlayback();
+        m_runtime->submitUserMessage(userText);
+        return;
+    }
+
+    if ((m_client && m_client->isBusy()) || m_tts->isBusy() || (m_player && m_player->playbackState() == QMediaPlayer::PlayingState))
         return;
 
     stopPlayback();
-    refreshClientConfig();
 
-    // Controller owns appending + persisting the user message (single source of truth).
+    m_streamEnabledForCurrentReply = SettingsManager::instance().aiStreamEnabled();
+    refreshTtsConfig();
+    m_ttsEnabledForCurrentReply = !m_tts->config().baseUrl.trimmed().isEmpty();
+    m_pendingStreamText.clear();
+    m_pendingStreamText.reserve(int(std::max<qsizetype>(256, userText.size() * 4)));
+
+    // Stable path: controller directly drives request lifecycle.
+    m_chatWindow->setBusy(true);
+    refreshClientConfig();
     m_chatWindow->appendUserMessage(userText);
     m_chatWindow->appendAiMessageStart();
-    m_chatWindow->setBusy(true);
-
-    // Build payload from current persisted messages.
-    const QByteArray msgJson = QJsonDocument(loadMessages(modelFolder)).toJson(QJsonDocument::Compact);
+    const QByteArray msgJson = QJsonDocument(ConversationRepository::loadMessages(modelFolder)).toJson(QJsonDocument::Compact);
     m_client->startChat(msgJson);
 }
 
@@ -563,6 +932,12 @@ void ChatController::onClearRequested(const QString& modelFolder)
     if (!m_chatWindow) return;
     if (modelFolder.isEmpty()) return;
 
+    if (m_toolRegistry)
+        m_toolRegistry->clear();
+    m_pendingSendModelFolder.clear();
+    m_pendingSendText.clear();
+    m_hasPendingSend = false;
+
     stopPlayback();
     if (m_pacedRevealTimer.isActive()) m_pacedRevealTimer.stop();
     m_pacedFullText.clear();
@@ -570,18 +945,25 @@ void ChatController::onClearRequested(const QString& modelFolder)
 
     m_client->cancel();
     m_tts->cancel();
+    if (m_useAgentRuntime && m_runtime) m_runtime->cancel();
     m_pendingFinalText.clear();
     m_pendingStreamText.clear();
+    m_runtimeBusyRequested = false;
 
-    saveClearedChat(modelFolder);
+    if (m_useAgentRuntime && m_runtime)
+        m_runtime->clearConversation(modelFolder);
+    else
+    {
+        saveClearedChat(modelFolder);
+        m_chatWindow->loadFromDisk(modelFolder);
+    }
 
-    m_chatWindow->loadFromDisk(modelFolder);
-    m_chatWindow->setBusy(false);
+    syncChatBusyUi();
 }
 
 void ChatController::refreshClientConfig()
 {
-    OpenAIChatClient::ChatConfig cfg;
+    IChatProvider::ChatConfig cfg;
     cfg.baseUrl = SettingsManager::instance().aiBaseUrl();
     cfg.apiKey = SettingsManager::instance().aiApiKey();
     cfg.model = SettingsManager::instance().aiModel();
@@ -599,7 +981,7 @@ void ChatController::refreshClientConfig()
 
 void ChatController::saveClearedChat(const QString& modelFolder) const
 {
-    saveMessages(modelFolder, QJsonArray{});
+    ConversationRepository::saveMessages(modelFolder, QJsonArray{});
 }
 
 bool ChatController::loadWavForLipSync(const QString& wavPath)
@@ -879,7 +1261,8 @@ void ChatController::onClientError(const QString& message)
     {
         // End the assistant bubble and unlock UI.
         m_chatWindow->finalizeAssistantMessage(message.isEmpty() ? tr("请求失败") : message, true);
-        m_chatWindow->setBusy(false);
+        m_runtimeBusyRequested = false;
+        syncChatBusyUi();
     }
 }
 
@@ -900,7 +1283,8 @@ void ChatController::onTtsError(const QString& message)
         m_chatWindow->finalizeAssistantMessage(message, true);
     }
 
-    m_chatWindow->setBusy(false);
+    m_runtimeBusyRequested = false;
+    syncChatBusyUi();
 }
 
 
@@ -908,6 +1292,12 @@ void ChatController::onModelChanged(const QString& modelFolder, const QString& m
 {
     m_modelFolder = modelFolder;
     m_modelDir = modelDir;
+
+    if (m_toolRegistry)
+        m_toolRegistry->clear();
+    m_pendingSendModelFolder.clear();
+    m_pendingSendText.clear();
+    m_hasPendingSend = false;
 
     // Stop any ongoing work tied to previous model.
     stopPlayback();
@@ -919,13 +1309,17 @@ void ChatController::onModelChanged(const QString& modelFolder, const QString& m
     if (m_tts) m_tts->cancel();
     m_pendingFinalText.clear();
     m_pendingStreamText.clear();
+    m_runtimeBusyRequested = false;
 
     if (m_chatWindow)
     {
         m_chatWindow->setCurrentModel(modelFolder, modelDir);
         m_chatWindow->loadFromDisk(modelFolder);
-        m_chatWindow->setBusy(false);
+        syncChatBusyUi();
     }
+
+    if (m_useAgentRuntime && m_runtime)
+        m_runtime->setModelContext(modelFolder, modelDir);
 
     // Apply preferred audio output as well (model switch might happen when devices changed)
     applyPreferredAudioOutput();
@@ -955,4 +1349,406 @@ void ChatController::applyPreferredAudioOutput()
     }
 
     m_audioOut->setDevice(QMediaDevices::defaultAudioOutput());
+}
+
+void ChatController::reloadMcpTools()
+{
+    auto* client = dynamic_cast<OpenAIChatClient*>(m_client);
+    if (!client)
+        return;
+
+    if (m_mcpToolsReloadInProgress)
+        return;
+
+    m_mcpToolsReloadInProgress = true;
+    m_mcpToolsDirty = false;
+
+    const QList<McpServerConfig> serverConfigs = SettingsManager::instance().mcpServers();
+    const QHash<QString, McpServerConfig> previousConfigCache = m_mcpConfigCache;
+    const QHash<QString, QJsonArray> previousRawToolsCache = m_mcpRawToolsCache;
+    const QHash<QString, McpServerStatus> previousStatusCache = m_mcpStatusCache;
+
+    QHash<QString, McpServerConfig> nextConfigCache;
+    QHash<QString, QJsonArray> nextRawToolsCache;
+    QHash<QString, McpServerStatus> pendingStatusCache;
+    QList<McpServerConfig> serversToReload;
+    int enabledServerCount = 0;
+
+    nextConfigCache.reserve(serverConfigs.size());
+    pendingStatusCache.reserve(serverConfigs.size());
+
+    for (const McpServerConfig& serverConfig : serverConfigs)
+    {
+        const QString serverName = serverConfig.name.trimmed();
+        if (serverName.isEmpty())
+            continue;
+
+        nextConfigCache.insert(serverName, serverConfig);
+
+        McpServerStatus status;
+        status.name = serverName;
+        status.enabled = serverConfig.enabled;
+
+        if (!serverConfig.enabled)
+        {
+            status.state = McpServerRuntimeState::Disabled;
+            pendingStatusCache.insert(serverName, status);
+            continue;
+        }
+
+        ++enabledServerCount;
+
+        const bool sameConfig = previousConfigCache.contains(serverName)
+            && sameMcpServerConfig(previousConfigCache.value(serverName), serverConfig);
+        const bool hasPreviousTools = previousRawToolsCache.contains(serverName);
+        const bool hasPreviousStatus = previousStatusCache.contains(serverName);
+
+        if (sameConfig && hasPreviousTools)
+        {
+            nextRawToolsCache.insert(serverName, previousRawToolsCache.value(serverName));
+            status = hasPreviousStatus ? previousStatusCache.value(serverName) : status;
+            status.name = serverName;
+            status.enabled = true;
+            if (status.state == McpServerRuntimeState::Starting)
+            {
+                status.state = McpServerRuntimeState::Enabled;
+                status.detail.clear();
+            }
+            pendingStatusCache.insert(serverName, status);
+            continue;
+        }
+
+        if (sameConfig && hasPreviousStatus && previousStatusCache.value(serverName).state == McpServerRuntimeState::Unavailable)
+        {
+            status = previousStatusCache.value(serverName);
+            status.name = serverName;
+            status.enabled = true;
+            pendingStatusCache.insert(serverName, status);
+            continue;
+        }
+
+        status.state = McpServerRuntimeState::Starting;
+        pendingStatusCache.insert(serverName, status);
+        serversToReload.push_back(serverConfig);
+    }
+
+    QList<McpServerStatus> pendingStatuses = buildMcpStatusesFromCache(serverConfigs, pendingStatusCache);
+    publishMcpServerStatuses(pendingStatuses);
+
+    QPointer<ChatController> guarded(this);
+
+    std::thread([guarded,
+                 serverConfigs,
+                 serversToReload,
+                 enabledServerCount,
+                 nextConfigCache,
+                 nextRawToolsCache,
+                 pendingStatusCache] () mutable {
+        QJsonArray mergedTools;
+        QHash<QString, QPair<QString, QString>> toolRoutes;
+        QHash<QString, QJsonArray> finalRawToolsCache = nextRawToolsCache;
+        QHash<QString, McpServerStatus> finalStatusCache = pendingStatusCache;
+
+        struct ServerLoadResult
+        {
+            QString serverName;
+            QJsonArray tools;
+            QString error;
+        };
+
+        std::vector<std::future<ServerLoadResult>> futures;
+        futures.reserve(static_cast<size_t>(serversToReload.size()));
+
+        for (const McpServerConfig& serverConfig : serversToReload)
+        {
+            futures.emplace_back(std::async(std::launch::async, [serverConfig]() {
+                ServerLoadResult out;
+                out.serverName = serverConfig.name;
+
+                QString initError;
+                std::unique_ptr<IMcpAdapter> adapter = IMcpAdapter::create(serverConfig, &initError);
+                if (!adapter)
+                {
+                    out.error = initError.isEmpty()
+                        ? QStringLiteral("create adapter failed")
+                        : initError;
+                    return out;
+                }
+
+                QString toolsError;
+                out.tools = adapter->listTools(&toolsError);
+                if (!toolsError.isEmpty())
+                    out.error = toolsError;
+                return out;
+            }));
+        }
+
+        for (auto& f : futures)
+        {
+            const ServerLoadResult loaded = f.get();
+            if (finalStatusCache.contains(loaded.serverName))
+            {
+                McpServerStatus status = finalStatusCache.value(loaded.serverName);
+                status.enabled = true;
+                status.state = loaded.error.isEmpty() ? McpServerRuntimeState::Enabled : McpServerRuntimeState::Unavailable;
+                status.detail = loaded.error;
+                finalStatusCache.insert(loaded.serverName, status);
+            }
+
+            if (!loaded.error.isEmpty())
+            {
+                finalRawToolsCache.remove(loaded.serverName);
+                qWarning().noquote() << "[MCP] list tools failed:" << loaded.serverName << loaded.error;
+                continue;
+            }
+
+            finalRawToolsCache.insert(loaded.serverName, loaded.tools);
+        }
+
+        composeMergedMcpTools(serverConfigs, finalRawToolsCache, &mergedTools, &toolRoutes);
+        const QList<McpServerStatus> finalStatuses = buildMcpStatusesFromCache(serverConfigs, finalStatusCache);
+
+        QMetaObject::invokeMethod(qApp, [guarded,
+                                         mergedTools,
+                                         enabledServerCount,
+                                         toolRoutes,
+                                         finalStatuses,
+                                         nextConfigCache,
+                                         finalRawToolsCache,
+                                         finalStatusCache] {
+            if (!guarded)
+                return;
+            if (guarded->m_toolRegistry)
+            {
+                guarded->m_toolRegistry->clear();
+                for (auto it = toolRoutes.begin(); it != toolRoutes.end(); ++it)
+                    guarded->m_toolRegistry->registerRoute(it.key(), it.value().first, it.value().second);
+            }
+            guarded->applyMcpTools(mergedTools,
+                                   enabledServerCount,
+                                   finalStatuses,
+                                   nextConfigCache,
+                                   finalRawToolsCache,
+                                   finalStatusCache);
+        }, Qt::QueuedConnection);
+    }).detach();
+}
+
+void ChatController::applyMcpTools(const QJsonArray& tools,
+                                   int enabledServerCount,
+                                   const QList<McpServerStatus>& statuses,
+                                   const QHash<QString, McpServerConfig>& configCache,
+                                   const QHash<QString, QJsonArray>& rawToolsCache,
+                                   const QHash<QString, McpServerStatus>& statusCache)
+{
+    auto* client = dynamic_cast<OpenAIChatClient*>(m_client);
+    if (!client)
+        return;
+
+    m_mcpToolsReloadInProgress = false;
+    if (m_mcpToolsDirty)
+    {
+        reloadMcpTools();
+        return;
+    }
+
+    m_mcpAdapters.clear();
+    m_mcpConfigCache = configCache;
+    m_mcpRawToolsCache = rawToolsCache;
+    m_mcpStatusCache = statusCache;
+    const QJsonArray mergedTools = tools;
+    client->setTools(mergedTools);
+    publishMcpServerStatuses(statuses);
+    qDebug().noquote() << "[MCP] tools loaded from servers:" << enabledServerCount << "tool count:" << mergedTools.size();
+
+    if (m_hasPendingSend)
+    {
+        const QString pendingModelFolder = m_pendingSendModelFolder;
+        const QString pendingText = m_pendingSendText;
+        m_pendingSendModelFolder.clear();
+        m_pendingSendText.clear();
+        m_hasPendingSend = false;
+        dispatchSendNow(pendingModelFolder, pendingText);
+    }
+}
+
+void ChatController::markMcpToolsDirty()
+{
+    m_mcpToolsDirty = true;
+    publishMcpServerStatuses(buildMcpStatusesFromCache(SettingsManager::instance().mcpServers(), m_mcpStatusCache));
+    if (!m_mcpToolsReloadInProgress)
+        reloadMcpTools();
+}
+
+void ChatController::refreshMcpServerStatuses()
+{
+    if (m_mcpToolsReloadInProgress)
+        return;
+
+    reloadMcpTools();
+}
+
+void ChatController::setMcpServerEnabled(const QString& serverName, bool enabled)
+{
+    if (serverName.trimmed().isEmpty())
+        return;
+
+    SettingsManager& settings = SettingsManager::instance();
+    if (!settings.hasMcpServer(serverName))
+        return;
+
+    McpServerConfig config = settings.mcpServer(serverName);
+    if (config.name.trimmed().isEmpty())
+        return;
+
+    if (config.enabled == enabled)
+    {
+        refreshMcpServerStatuses();
+        return;
+    }
+
+    config.enabled = enabled;
+    settings.updateMcpServer(config);
+    markMcpToolsDirty();
+}
+
+void ChatController::onRuntimeRequestStartTts(const QString& text, const QString& audioPath, bool streamingEnabled)
+{
+    // Runtime is requesting TTS generation.
+    if (!m_tts)
+        return;
+
+    Q_UNUSED(streamingEnabled);  // Used by Runtime internally.
+    m_tts->startSpeech(text, audioPath);
+}
+
+void ChatController::onRuntimeRequestStartPlayback(const QString& audioPath)
+{
+    // Runtime is requesting playback of generated audio.
+    if (!audioPath.isEmpty())
+        startPlaybackWithLip(audioPath);
+}
+
+void ChatController::onRuntimeRequestStartPacedTextReveal(const QString& fullText)
+{
+    // Runtime is requesting paced text reveal (sync with audio).
+    startPacedTextReveal(fullText);
+}
+
+void ChatController::onRuntimeToolCallRequested(const QString& toolName, const QString& toolInput)
+{
+    if (!m_runtime)
+        return;
+
+    QString resolvedServerName;
+    QString resolvedRawToolName;
+    if (m_toolRegistry)
+        m_toolRegistry->resolveRoute(toolName, &resolvedServerName, &resolvedRawToolName);
+
+    QPointer<ChatController> guarded(this);
+    std::thread([guarded, toolName, toolInput, resolvedServerName, resolvedRawToolName] {
+        QString errorMessage;
+        QString result;
+
+        QString serverName = resolvedServerName;
+        QString rawToolName = resolvedRawToolName;
+        const QList<McpServerConfig> serverConfigs = SettingsManager::instance().mcpServers();
+
+        if (serverName.isEmpty())
+            tryResolveFromExposedNameHeuristic(toolName, serverConfigs, &serverName, &rawToolName);
+
+        if (serverName.isEmpty())
+        {
+            const int sep = toolName.indexOf(QLatin1Char(':'));
+            if (sep > 0 && sep < toolName.size() - 1)
+            {
+                serverName = toolName.left(sep);
+                rawToolName = toolName.mid(sep + 1);
+            }
+        }
+
+        if (serverName.isEmpty() || rawToolName.isEmpty())
+        {
+            errorMessage = QStringLiteral("Tool name must include MCP server prefix, e.g. server__tool");
+        }
+        else
+        {
+            McpServerConfig selectedConfig;
+            bool found = false;
+            for (const McpServerConfig& cfg : serverConfigs)
+            {
+                if (cfg.name == serverName)
+                {
+                    selectedConfig = cfg;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                errorMessage = QStringLiteral("MCP server not found: ") + serverName;
+            }
+            else if (!selectedConfig.enabled)
+            {
+                errorMessage = QStringLiteral("MCP server is disabled: ") + serverName;
+            }
+            else
+            {
+                QString initError;
+                std::unique_ptr<IMcpAdapter> adapter = IMcpAdapter::create(selectedConfig, &initError);
+                if (!adapter)
+                {
+                    errorMessage = initError.isEmpty()
+                        ? (QStringLiteral("MCP adapter init failed: ") + serverName)
+                        : initError;
+                }
+                else
+                {
+                    result = adapter->callTool(rawToolName, toolInput, &errorMessage);
+                    if (errorMessage.isEmpty())
+                    {
+                        const QString preview = result.left(180).replace('\n', QLatin1Char(' '));
+                        qInfo().noquote() << "[MCP] tool call success:" << serverName + QLatin1Char(':') + rawToolName
+                                          << "result_preview:" << preview;
+                    }
+                }
+            }
+        }
+
+        if (!errorMessage.isEmpty())
+        {
+            qWarning().noquote() << "[MCP] tool call failed:" << toolName << errorMessage;
+            result = QStringLiteral("[MCP error] ") + errorMessage;
+        }
+
+        QMetaObject::invokeMethod(qApp, [guarded, toolName, toolInput, result] {
+            if (!guarded || !guarded->m_runtime)
+                return;
+            guarded->m_runtime->submitToolResult(toolName, toolInput, result);
+        }, Qt::QueuedConnection);
+    }).detach();
+}
+
+bool ChatController::hasActiveOutputPresentation() const
+{
+    const bool ttsGenerating = m_tts && m_tts->isBusy();
+    const bool audioPlaying = m_player && m_player->playbackState() == QMediaPlayer::PlayingState;
+    const bool pacedReveal = m_pacedRevealTimer.isActive();
+    return ttsGenerating || audioPlaying || pacedReveal;
+}
+
+void ChatController::syncChatBusyUi()
+{
+    if (!m_chatWindow)
+        return;
+
+    const bool busy = m_runtimeBusyRequested || hasActiveOutputPresentation();
+    m_chatWindow->setBusy(busy);
+}
+
+void ChatController::publishMcpServerStatuses(const QList<McpServerStatus>& statuses)
+{
+    m_mcpStatuses = statuses;
+    emit mcpServerStatusesChanged(m_mcpStatuses);
 }

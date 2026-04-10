@@ -196,6 +196,19 @@ QString buildApplicationStyleSheet()
         "QScrollBar::handle { background: transparent; }"
         "QWidget#chatComposerCard { background: %16; border: 1px solid %17; border-radius: %18px; }"
         "QLabel#chatComposerCountLabel { background: transparent; color: %8; font-size: 12px; }"
+        "QWidget#mcpServerCard { background: %3; border: 2px solid %13; border-radius: 14px; }"
+        "QWidget#mcpServerCard:hover { border-color: %14; background: %5; }"
+        "QLabel#mcpServerCardName { color: %2; font-weight: 600; }"
+        "QLabel#mcpServerCardType { padding: 2px 8px; border-radius: 8px; color: %12; background: %13; }"
+        "QFrame#chatMcpPopup { background: transparent; border: none; }"
+        "QWidget#chatMcpPopupCard { background: %6; border: 1px solid %4; border-radius: 14px; }"
+        "QScrollArea#chatMcpPopupScroll, QWidget#chatMcpPopupContent { background: transparent; border: none; }"
+        "QLabel#chatMcpPopupTitle { color: %2; font-weight: 600; font-size: 13px; }"
+        "QLabel#chatMcpPopupEmptyLabel { color: %8; padding: 6px 2px; }"
+        "QWidget#chatMcpPopupRow { background: %3; border: 1px solid %10; border-radius: 12px; }"
+        "QWidget#chatMcpPopupRow:hover { background: %5; border-color: %13; }"
+        "QLabel#chatMcpPopupRowName { color: %2; font-weight: 600; }"
+        "QLabel#chatMcpPopupRowStatus { color: %8; font-size: 12px; }"
     )
         .arg(toRgba(t.windowBackground))
         .arg(toRgba(t.textPrimary))
@@ -587,6 +600,21 @@ public:
         syncVisibility();
     }
 
+    ~HoverScrollBarController() override
+    {
+        m_hideTimer.stop();
+
+        if (m_area)
+        {
+            m_area->removeEventFilter(this);
+            if (QWidget* viewport = m_area->viewport())
+                viewport->removeEventFilter(this);
+        }
+
+        teardownBar(&m_verticalBar);
+        teardownBar(&m_horizontalBar);
+    }
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
@@ -623,6 +651,26 @@ protected:
     }
 
 private:
+    void teardownBar(BarState* state)
+    {
+        if (!state)
+            return;
+
+        if (state->animation)
+        {
+            if (state->animation->state() == QAbstractAnimation::Running)
+                state->animation->stop();
+            state->animation->disconnect(this);
+        }
+
+        if (state->bar)
+        {
+            state->bar->removeEventFilter(this);
+            state->bar->disconnect(this);
+            state->bar->setVisible(false);
+        }
+    }
+
     void setupBar(BarState* state, EraOverlayScrollBar* bar, bool enabled)
     {
         if (!state)

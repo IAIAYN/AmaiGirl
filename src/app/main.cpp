@@ -506,10 +506,7 @@ int main(int argc, char *argv[]) {
         }
     });
 
-    QObject::connect(settingsWnd, &SettingsWindow::aiSettingsChanged, chatCtl, [chatCtl]{
-        Q_UNUSED(chatCtl);
-        // config is pulled on send; no-op placeholder.
-    });
+    QObject::connect(settingsWnd, &SettingsWindow::mcpSettingsChanged, chatCtl, &ChatController::markMcpToolsDirty, Qt::QueuedConnection);
 
     QObject::connect(settingsWnd, &SettingsWindow::languageChanged, &app, [&app, &appTranslator, &applyMenuTexts](const QString& code){
         const bool loaded = loadAppTranslator(app, appTranslator, code);

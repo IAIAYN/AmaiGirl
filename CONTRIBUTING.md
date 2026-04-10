@@ -142,8 +142,8 @@ cmake -S . -B build -G Ninja \
 
 ### 4. 代码与提交规范
 
-- 不要直接在 `dev` 上开发；请从 `dev` 派生分支进行开发，推荐使用常见前缀：`feat/xxx`、`fix/xxx`、`chore/xxx`、`docs/xxx`、`refactor/xxx`、`perf/xxx`、`test/xxx`、`build/xxx`、`ci/xxx`、`hotfix/xxx`、`revert/xxx`
-- 不建议直接在 `main` 分支上进行开发提交
+- 不建议直接在 `dev` 上开发；请从 `dev` 派生分支进行开发，推荐使用常见前缀：`feat/xxx`、`fix/xxx`、`chore/xxx`、`docs/xxx`、`refactor/xxx`、`perf/xxx`、`test/xxx`、`build/xxx`、`ci/xxx`、`hotfix/xxx`、`revert/xxx`
+- 不要直接在 `main` 分支上进行开发提交
 - 尽量保持改动聚焦、最小化
 - 不要在同一 PR 中混入无关重构
 - 保持现有代码风格（命名、缩进、文件组织）
@@ -154,6 +154,16 @@ cmake -S . -B build -G Ninja \
    - 统一禁止：`#ifdef` / `#ifndef` 直接判断平台宏
 - 对 UI 文案改动，请同步 i18n（`res/i18n/*.ts`）
 - 涉及许可证与分发内容，请同步更新 `NOTICE` / `THIRD_PARTY_LICENSES.md` / `THIRD_PARTY_LICENSES.en.md`
+
+#### i18n 更新流程
+
+- 仅在已有 `.ts` 基础上重新生成 `.qm` 时，执行：`python3 scripts/compile_qm.py`
+- 变更了 Qt `tr()` / `QT_TR_NOOP()` / 界面文案后，执行完整流程：`python3 scripts/update_i18n.py --verbose`
+- `scripts/update_i18n.py` 会先运行 `lupdate` 同步 `res/i18n/*.ts`，再运行 `lrelease` 生成对应 `.qm`
+- 默认扫描目录为：`src/app`、`src/ai`、`src/common`、`src/engine`、`src/ui`
+- 如需保留废弃翻译条目，可追加 `--keep-obsolete`
+- Qt Linguist 工具默认从 `PATH` 查找，也支持通过环境变量显式指定：`AMAI_LUPDATE`、`QT_LUPDATE`、`AMAI_LRELEASE`、`QT_LRELEASE`
+- 若本机 Qt 安装不在 `PATH` 中，也可通过 `QT_HOST_BINS`、`QTDIR`、`QT_ROOT`、`QT_HOST_PATH` 辅助定位工具
 
 可在本地执行以下命令进行检查：
 

@@ -1,6 +1,9 @@
 #include "ui/SettingsWindow.hpp"
+#include "ui/McpServerCard.hpp"
+#include "ui/McpServerEditorDialog.hpp"
 #include "app/Version.hpp"
 #include "common/SettingsManager.hpp"
+#include "ai/core/McpServerConfig.hpp"
 #include "common/Utils.hpp"
 #include <QStandardPaths>
 #include <QDir>
@@ -40,9 +43,14 @@
 #include <QFont>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QScrollArea>
+#include <QDialog>
+#include <QVBoxLayout>
 #include <QLocale>
 #include <QStyleHints>
 #include <QtGlobal>
+
+#include <functional>
 
 #include <QtMultimedia/QMediaDevices>
 #include <QtMultimedia/QAudioDevice>
@@ -157,11 +165,20 @@ public:
     // AI tab
     QWidget* aiTab{nullptr};
     QFormLayout* aiForm{nullptr};
+    QScrollArea* aiScrollArea{nullptr};
+    QWidget* aiScrollContent{nullptr};
+    QTimer* mcpReloadDebounce{nullptr};
     ThemeWidgets::LineEdit* aiBaseUrl{nullptr};
     ThemeWidgets::LineEdit* aiKey{nullptr};
     ThemeWidgets::LineEdit* aiModel{nullptr};
     ThemeWidgets::PlainTextEdit* aiSystemPrompt{nullptr};
     ThemeWidgets::Switch* aiStream{nullptr};
+    QWidget* mcpServersRow{nullptr};
+    QWidget* mcpServersListContainer{nullptr};
+    QGridLayout* mcpServersListLayout{nullptr};
+    QLabel* mcpEmptyLabel{nullptr};
+    ThemeWidgets::Button* mcpAddBtn{nullptr};
+    McpServerEditorDialog* mcpEditorDialog{nullptr};
     QWidget* aiBaseUrlRow{nullptr};
     QWidget* aiKeyRow{nullptr};
     QWidget* aiModelRow{nullptr};
@@ -208,7 +225,10 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     setWindowFlag(Qt::Window, true);
     setWindowFlag(Qt::CustomizeWindowHint, false);
     setWindowFlag(Qt::WindowMaximizeButtonHint, false);
-    resize(520, 420);
+    const int minW = 760;
+    const int minH = qMax(420, (minW * 3) / 4);
+    setMinimumSize(minW, minH);
+    resize(minW, minH);
 
     QScreen* s = nullptr;
     if (parentWidget() && parentWidget()->screen()) s = parentWidget()->screen();
@@ -445,20 +465,36 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
     // ---- AI tab ----
     d->aiTab = new QWidget(d->tabStack);
     {
-        auto form2 = new QFormLayout(d->aiTab);
+        auto* aiRootLayout = new QVBoxLayout(d->aiTab);
+        aiRootLayout->setContentsMargins(0, 0, 0, 0);
+        aiRootLayout->setSpacing(0);
+
+        d->aiScrollArea = new QScrollArea(d->aiTab);
+        d->aiScrollArea->setWidgetResizable(true);
+        d->aiScrollArea->setFrameShape(QFrame::NoFrame);
+        Theme::installHoverScrollBars(d->aiScrollArea, true, false);
+        aiRootLayout->addWidget(d->aiScrollArea);
+
+        d->aiScrollContent = new QWidget(d->aiScrollArea);
+        d->aiScrollArea->setWidget(d->aiScrollContent);
+
+        auto form2 = new QFormLayout(d->aiScrollContent);
         d->aiForm = form2;
         applyLeftAlignedFormLayout(form2);
 
-        d->aiBaseUrl = new ThemeWidgets::LineEdit(SettingsManager::instance().aiBaseUrl(), d->aiTab);
+        d->aiBaseUrl = new ThemeWidgets::LineEdit(SettingsManager::instance().aiBaseUrl(), d->aiScrollContent);
         d->aiBaseUrl->setFixedHeight(26);
-        d->aiKey = new ThemeWidgets::LineEdit(SettingsManager::instance().aiApiKey(), d->aiTab);
+        d->aiBaseUrl->setPlaceholderText(tr("例如：https://api.openai.com/v1"));
+        d->aiKey = new ThemeWidgets::LineEdit(SettingsManager::instance().aiApiKey(), d->aiScrollContent);
         d->aiKey->setFixedHeight(26);
+        d->aiKey->setPlaceholderText(tr("例如：sk-xxxx"));
         d->aiKey->setEchoMode(QLineEdit::Password);
-        d->aiModel = new ThemeWidgets::LineEdit(SettingsManager::instance().aiModel(), d->aiTab);
+        d->aiModel = new ThemeWidgets::LineEdit(SettingsManager::instance().aiModel(), d->aiScrollContent);
         d->aiModel->setFixedHeight(26);
-        d->aiSystemPrompt = new ThemeWidgets::PlainTextEdit(SettingsManager::instance().aiSystemPrompt(), d->aiTab);
+        d->aiModel->setPlaceholderText(tr("例如：gpt-4o-mini"));
+        d->aiSystemPrompt = new ThemeWidgets::PlainTextEdit(SettingsManager::instance().aiSystemPrompt(), d->aiScrollContent);
         d->aiSystemPrompt->setPlaceholderText(tr("支持变量：$name$（当前模型名）"));
-        d->aiStream = new ThemeWidgets::Switch(tr("是否流式输出"), d->aiTab);
+        d->aiStream = new ThemeWidgets::Switch(tr("是否流式输出"), d->aiScrollContent);
         d->aiStream->setChecked(SettingsManager::instance().aiStreamEnabled());
 
         // AI/TTS tooltip helper (same symbol style as 模型设置)
@@ -478,7 +514,7 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         };
 
         auto mkRowWithInfo = [&](const QString& label, QWidget* field, const QString& tip, QWidget** outRow, QLabel** outTip){
-            QWidget* row = new QWidget(d->aiTab);
+            QWidget* row = new QWidget(d->aiScrollContent);
             auto hl = new QHBoxLayout(row);
             hl->setContentsMargins(0,0,0,0);
             hl->setSpacing(kInlineRowSpacing);
@@ -564,15 +600,19 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         }
 
         // TTS fields
-        d->ttsBaseUrl = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsBaseUrl(), d->aiTab);
+        d->ttsBaseUrl = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsBaseUrl(), d->aiScrollContent);
         d->ttsBaseUrl->setFixedHeight(26);
-        d->ttsKey = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsApiKey(), d->aiTab);
+        d->ttsBaseUrl->setPlaceholderText(tr("例如：https://api.openai.com/v1"));
+        d->ttsKey = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsApiKey(), d->aiScrollContent);
         d->ttsKey->setFixedHeight(26);
+        d->ttsKey->setPlaceholderText(tr("例如：sk-xxxx"));
         d->ttsKey->setEchoMode(QLineEdit::Password);
-        d->ttsModel = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsModel(), d->aiTab);
+        d->ttsModel = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsModel(), d->aiScrollContent);
         d->ttsModel->setFixedHeight(26);
-        d->ttsVoice = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsVoice(), d->aiTab);
+        d->ttsModel->setPlaceholderText(tr("例如：gpt-4o-mini-tts"));
+        d->ttsVoice = new ThemeWidgets::LineEdit(SettingsManager::instance().ttsVoice(), d->aiScrollContent);
         d->ttsVoice->setFixedHeight(26);
+        d->ttsVoice->setPlaceholderText(tr("例如：alloy"));
 
         mkRowWithInfo(
             tr("语音API："),
@@ -621,6 +661,37 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
             &d->tipTtsVoice
         );
 
+        // MCP servers
+        {
+            QWidget* row = new QWidget(d->aiScrollContent);
+            auto* outer = new QVBoxLayout(row);
+            outer->setContentsMargins(0, 0, 0, 0);
+            outer->setSpacing(kInlineRowSpacing);
+
+            auto* top = new QHBoxLayout();
+            top->setContentsMargins(0, 0, 0, 0);
+            top->setSpacing(kInlineRowSpacing);
+
+            d->mcpAddBtn = new ThemeWidgets::Button(tr("添加MCP服务器"), row);
+            d->mcpAddBtn->setTone(ThemeWidgets::Button::Tone::Neutral);
+            top->addWidget(d->mcpAddBtn);
+            top->addStretch(1);
+            outer->addLayout(top);
+
+            d->mcpServersListContainer = new QWidget(row);
+            d->mcpServersListLayout = new QGridLayout(d->mcpServersListContainer);
+            d->mcpServersListLayout->setContentsMargins(0, 0, 0, 0);
+            d->mcpServersListLayout->setHorizontalSpacing(10);
+            d->mcpServersListLayout->setVerticalSpacing(10);
+
+            d->mcpEmptyLabel = new QLabel(tr("尚未添加MCP服务器"), d->mcpServersListContainer);
+            d->mcpServersListLayout->addWidget(d->mcpEmptyLabel, 0, 0);
+
+            outer->addWidget(d->mcpServersListContainer);
+            d->mcpServersRow = row;
+            form2->addRow(tr("MCP服务器："), row);
+        }
+
         form2->addItem(new QSpacerItem(0,0,QSizePolicy::Minimum,QSizePolicy::Expanding));
 
         // hot update
@@ -634,6 +705,42 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QMainWindow(parent), d(new Imp
         connect(d->ttsKey, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsApiKey(t); });
         connect(d->ttsModel, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsModel(t); });
         connect(d->ttsVoice, &QLineEdit::textChanged, this, [](const QString& t){ SettingsManager::instance().setTtsVoice(t); });
+
+        d->mcpReloadDebounce = new QTimer(this);
+        d->mcpReloadDebounce->setSingleShot(true);
+        d->mcpReloadDebounce->setInterval(260);
+        connect(d->mcpReloadDebounce, &QTimer::timeout, this, [this] {
+            emit mcpSettingsChanged();
+        });
+
+        connect(d->mcpAddBtn, &QPushButton::clicked, this, [this] {
+            if (!d->mcpEditorDialog)
+                d->mcpEditorDialog = new McpServerEditorDialog(this);
+
+            McpServerConfig defaultConfig;
+            defaultConfig.name = QStringLiteral("mcp-%1").arg(SettingsManager::instance().mcpServers().size() + 1);
+            d->mcpEditorDialog->setServerConfig(defaultConfig);
+
+            connect(d->mcpEditorDialog, &QDialog::finished, this, [this](int result) {
+                if (result != QDialog::Accepted)
+                    return;
+
+                const McpServerConfig newServer = d->mcpEditorDialog->serverConfig();
+                if (SettingsManager::instance().hasMcpServer(newServer.name))
+                {
+                    QMessageBox::warning(this, tr("名称冲突"), tr("已存在同名MCP服务器，请更换名称。"));
+                    return;
+                }
+
+                SettingsManager::instance().addMcpServer(newServer);
+                rebuildMcpServerCards();
+                scheduleMcpToolsReload();
+            }, Qt::SingleShotConnection);
+
+            d->mcpEditorDialog->open();
+        });
+
+        rebuildMcpServerCards();
     }
     d->tabStack->addWidget(d->aiTab);
     d->tabs->addTab(
@@ -997,6 +1104,11 @@ void SettingsWindow::refreshSidebarThemeIndicator()
 
 bool SettingsWindow::event(QEvent* e)
 {
+    if (e->type() == QEvent::WindowActivate)
+    {
+        rebuildMcpServerCards();
+    }
+
     if (e->type() == QEvent::LanguageChange)
     {
         setWindowTitle(tr("设置"));
@@ -1015,8 +1127,17 @@ bool SettingsWindow::event(QEvent* e)
             if (d->chkBlink) d->chkBlink->setText(tr("自动眨眼"));
             if (d->chkGaze) d->chkGaze->setText(tr("视线跟踪"));
             if (d->chkPhysics) d->chkPhysics->setText(tr("物理模拟"));
+            if (d->aiBaseUrl) d->aiBaseUrl->setPlaceholderText(tr("例如：https://api.openai.com/v1"));
+            if (d->aiKey) d->aiKey->setPlaceholderText(tr("例如：sk-xxxx"));
+            if (d->aiModel) d->aiModel->setPlaceholderText(tr("例如：gpt-4o-mini"));
             if (d->aiSystemPrompt) d->aiSystemPrompt->setPlaceholderText(tr("支持变量：$name$（当前模型名）"));
             if (d->aiStream) d->aiStream->setText(tr("是否流式输出"));
+            if (d->ttsBaseUrl) d->ttsBaseUrl->setPlaceholderText(tr("例如：https://api.openai.com/v1"));
+            if (d->ttsKey) d->ttsKey->setPlaceholderText(tr("例如：sk-xxxx"));
+            if (d->ttsModel) d->ttsModel->setPlaceholderText(tr("例如：gpt-4o-mini-tts"));
+            if (d->ttsVoice) d->ttsVoice->setPlaceholderText(tr("例如：alloy"));
+            if (d->mcpAddBtn) d->mcpAddBtn->setText(tr("添加MCP服务器"));
+            if (d->mcpEmptyLabel) d->mcpEmptyLabel->setText(tr("尚未添加MCP服务器"));
             if (d->clearCacheBtn) d->clearCacheBtn->setText(tr("清除缓存"));
             if (d->clearChatsBtn) d->clearChatsBtn->setText(tr("清除所有对话历史"));
 
@@ -1058,6 +1179,9 @@ bool SettingsWindow::event(QEvent* e)
                 }
                 if (auto* label = qobject_cast<QLabel*>(d->aiForm->labelForField(d->aiSystemPromptRow))) {
                     label->setText(tr("对话人设："));
+                }
+                if (auto* label = qobject_cast<QLabel*>(d->aiForm->labelForField(d->mcpServersRow))) {
+                    label->setText(tr("MCP服务器："));
                 }
                 if (auto* label = qobject_cast<QLabel*>(d->aiForm->labelForField(d->ttsBaseUrlRow))) {
                     label->setText(tr("语音API："));
@@ -1223,4 +1347,116 @@ void SettingsWindow::refreshModelList() {
         for (const QString& w : watched) d->fsw->removePath(w);
         addWatchDirIfExists(d->fsw, root);
     }
+}
+
+void SettingsWindow::rebuildMcpServerCards()
+{
+    if (!d || !d->mcpServersListLayout || !d->mcpServersListContainer)
+        return;
+
+    d->mcpEmptyLabel = nullptr;
+
+    while (QLayoutItem* item = d->mcpServersListLayout->takeAt(0))
+    {
+        if (QWidget* w = item->widget())
+            w->deleteLater();
+        delete item;
+    }
+
+    const QList<McpServerConfig> servers = SettingsManager::instance().mcpServers();
+    const int usableWidth = qMax(d->mcpServersListContainer->width(), 300);
+    const int columns = qMax(1, usableWidth / 340);
+    if (servers.isEmpty())
+    {
+        d->mcpEmptyLabel = new QLabel(tr("尚未添加MCP服务器"), d->mcpServersListContainer);
+        d->mcpServersListLayout->addWidget(d->mcpEmptyLabel, 0, 0, 1, columns);
+        return;
+    }
+
+    for (int i = 0; i < servers.size(); ++i)
+    {
+        const McpServerConfig server = servers.at(i);
+        const int row = i / columns;
+        const int col = i % columns;
+
+        auto* card = new McpServerCard(d->mcpServersListContainer);
+        card->setServerConfig(server);
+        d->mcpServersListLayout->addWidget(card, row, col);
+
+        connect(card, &McpServerCard::enabledToggled, this, [this, server](bool enabled) {
+            McpServerConfig updated = server;
+            updated.enabled = enabled;
+
+            SettingsManager::instance().updateMcpServer(updated);
+
+            rebuildMcpServerCards();
+            scheduleMcpToolsReload();
+        });
+
+        connect(card, &McpServerCard::editRequested, this, [this, server] {
+            if (!d->mcpEditorDialog)
+                d->mcpEditorDialog = new McpServerEditorDialog(this);
+
+            d->mcpEditorDialog->setServerConfig(server);
+
+            connect(d->mcpEditorDialog, &QDialog::finished, this, [this, server](int result) {
+                if (result != QDialog::Accepted)
+                    return;
+
+                McpServerConfig updated = d->mcpEditorDialog->serverConfig();
+                updated.enabled = server.enabled;
+
+                if (updated.name != server.name && SettingsManager::instance().hasMcpServer(updated.name))
+                {
+                    QMessageBox::warning(this, tr("名称冲突"), tr("已存在同名MCP服务器，请更换名称。"));
+                    return;
+                }
+
+                if (updated.name != server.name)
+                {
+                    SettingsManager::instance().removeMcpServer(server.name);
+                    SettingsManager::instance().addMcpServer(updated);
+                }
+                else
+                {
+                    SettingsManager::instance().updateMcpServer(updated);
+                }
+
+                rebuildMcpServerCards();
+                scheduleMcpToolsReload();
+            }, Qt::SingleShotConnection);
+
+            d->mcpEditorDialog->open();
+        });
+
+        connect(card, &McpServerCard::deleteRequested, this, [this, server] {
+            const auto ret = QMessageBox::question(
+                this,
+                tr("删除MCP服务器"),
+                tr("确定删除 MCP 服务器“%1”吗？").arg(server.name),
+                QMessageBox::Yes | QMessageBox::No,
+                QMessageBox::No);
+
+            if (ret != QMessageBox::Yes)
+                return;
+
+            SettingsManager::instance().removeMcpServer(server.name);
+            rebuildMcpServerCards();
+            scheduleMcpToolsReload();
+        });
+    }
+
+    const int rows = (servers.size() + columns - 1) / columns;
+    d->mcpServersListLayout->setRowStretch(rows, 1);
+}
+
+void SettingsWindow::scheduleMcpToolsReload()
+{
+    if (!d || !d->mcpReloadDebounce)
+    {
+        emit mcpSettingsChanged();
+        return;
+    }
+
+    d->mcpReloadDebounce->start();
 }

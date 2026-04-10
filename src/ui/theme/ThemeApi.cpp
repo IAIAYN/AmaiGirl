@@ -20,8 +20,14 @@ QString eraIconRelativePath(Theme::IconToken token)
     {
     case Theme::IconToken::ChatSend:
         return QStringLiteral("icons/era-style/chat-send.svg");
+    case Theme::IconToken::ChatStop:
+        return QStringLiteral("icons/era-style/chat-stop.svg");
+    case Theme::IconToken::ChatMcp:
+        return QStringLiteral("icons/era-style/chat-mcp.svg");
     case Theme::IconToken::ChatClear:
         return QStringLiteral("icons/era-style/chat-clear.svg");
+    case Theme::IconToken::ChatDelete:
+        return QStringLiteral("icons/era-style/chat-delete.svg");
     case Theme::IconToken::SettingsBasic:
         return QStringLiteral("icons/era-style/settings-basic.svg");
     case Theme::IconToken::SettingsModel:
@@ -60,6 +66,11 @@ void installApplicationStyle(QApplication& app, const QString& themeId)
 void applyTheme(QApplication& app, const QString& themeId)
 {
     EraStyle::applyTheme(app, resolveThemeId(themeId));
+}
+
+void installHoverScrollBars(QAbstractScrollArea* area, bool enableVertical, bool enableHorizontal)
+{
+    EraStyle::installHoverScrollBars(area, enableVertical, enableHorizontal);
 }
 
 QString iconRelativePath(IconToken token, const QString& themeId)

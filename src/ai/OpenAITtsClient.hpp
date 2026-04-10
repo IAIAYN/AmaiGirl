@@ -8,32 +8,28 @@
 #include <QString>
 #include <QUrl>
 
+#include "ai/core/ITtsProvider.hpp"
+
 // NOTE: Do NOT undefine Qt's 'slots' keyword macro here.
 // If some 3rd-party code defines a conflicting macro named 'slots', we clean it up
 // in our .cpp translation units before including Qt headers.
 
-class OpenAITtsClient : public QObject
+class OpenAITtsClient : public QObject, public ITtsProvider
 {
     Q_OBJECT
 public:
-    struct TtsConfig
-    {
-        QString baseUrl;  // user input like https://xxx/v1
-        QString apiKey;
-        QString model;
-        QString voice;
-    };
+    using TtsConfig = ITtsProvider::TtsConfig;
 
     explicit OpenAITtsClient(QObject* parent = nullptr);
 
-    void setConfig(TtsConfig cfg);
-    TtsConfig config() const { return m_cfg; }
+    void setConfig(TtsConfig cfg) override;
+    TtsConfig config() const override;
 
-    bool isBusy() const { return m_reply != nullptr; }
+    bool isBusy() const override { return m_reply != nullptr; }
 
     // Writes audio to outPath (overwrites) and emits finished(outPath).
-    void startSpeech(const QString& text, const QString& outPath);
-    void cancel();
+    void startSpeech(const QString& text, const QString& outPath) override;
+    void cancel() override;
 
 Q_SIGNALS:
     void started();

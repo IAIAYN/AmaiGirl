@@ -369,6 +369,12 @@ set(UI_SOURCES
     src/ui/era-style/EraTabBar.cpp
     src/ui/SettingsWindow.hpp
     src/ui/SettingsWindow.cpp
+    src/ui/McpServerCard.hpp
+    src/ui/McpServerCard.cpp
+    src/ui/McpServerEditorDialog.hpp
+    src/ui/McpServerEditorDialog.cpp
+    src/ui/widgets/TypingDotsWidget.hpp
+    src/ui/widgets/TypingDotsWidget.cpp
     src/ui/AboutWindow.hpp
     src/ui/AboutWindow.cpp
     src/ui/ChatWindow.hpp
@@ -402,12 +408,36 @@ set(COMMON_SOURCES
 
 # AI
 set(AI_SOURCES
+    src/ai/AgentRuntime.hpp
+    src/ai/AgentRuntime.cpp
+    src/ai/McpStdioAdapter.hpp
+    src/ai/McpStdioAdapter.cpp
+    src/ai/McpHttpSseAdapter.hpp
+    src/ai/McpHttpSseAdapter.cpp
+    src/ai/ConversationRepository.hpp
+    src/ai/ConversationRepository.cpp
+    src/ai/ConversationRepositoryAdapter.hpp
+    src/ai/ConversationRepositoryAdapter.cpp
     src/ai/OpenAIChatClient.hpp
     src/ai/OpenAIChatClient.cpp
     src/ai/ChatController.hpp
     src/ai/ChatController.cpp
     src/ai/OpenAITtsClient.hpp
     src/ai/OpenAITtsClient.cpp
+    src/ai/core/IChatProvider.hpp
+    src/ai/core/ITtsProvider.hpp
+    src/ai/core/IConversationStore.hpp
+    src/ai/core/IAgentRuntime.hpp
+    src/ai/core/McpServerStatus.hpp
+    src/ai/core/McpServerConfig.hpp
+    src/ai/core/McpServerConfig.cpp
+    src/ai/core/IMcpAdapter.hpp
+    src/ai/core/IMcpAdapter.cpp
+    src/ai/core/IMcpHttpSseAdapter.hpp
+    src/ai/core/IToolRegistry.hpp
+    src/ai/core/ToolRegistry.hpp
+    src/ai/core/ToolRegistry.cpp
+    src/ai/core/ISkillRegistry.hpp
 )
 
 if(APPLE)

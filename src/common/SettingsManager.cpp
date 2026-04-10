@@ -1,5 +1,6 @@
 #include "common/SettingsManager.hpp"
 #include "common/Utils.hpp"
+#include "ai/core/McpServerConfig.hpp"
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -9,6 +10,8 @@
 #include <QLocale>
 #include <QDirIterator>
 #include <QtGlobal>
+
+#include <algorithm>
 
 static bool copyDirectoryRecursively(const QString& srcPath, const QString& dstPath)
 {
@@ -298,6 +301,39 @@ void SettingsManager::load()
     m_aiSystemPrompt = root.value("aiSystemPrompt").toString();
     m_aiStream       = root.value("aiStream").toBool(true);
 
+    m_mcpEnabledStates.clear();
+    if (root.value("mcpServerEnabledStates").isObject())
+    {
+        const QJsonObject statesObj = root.value("mcpServerEnabledStates").toObject();
+        for (auto it = statesObj.begin(); it != statesObj.end(); ++it)
+            m_mcpEnabledStates.insert(it.key(), it.value().toBool(true));
+    }
+
+    // Migration: Check if old MCP config exists in config.json, migrate to mcp.json if needed
+    if (root.contains("mcp") && root.value("mcp").isObject() && !QFile(mcpJsonPath()).exists())
+    {
+        const QJsonObject mcp = root.value("mcp").toObject();
+        if (mcp.value("enabled").toBool(false)) {
+            // Migrate old stdio MCP config to new format
+            McpServerConfig oldConfig;
+            oldConfig.name = QStringLiteral("Default");
+            oldConfig.type = McpServerConfig::Type::Stdio;
+            oldConfig.enabled = true;
+            oldConfig.command = mcp.value("command").toString();
+            oldConfig.args = mcp.value("args").toString();
+            oldConfig.timeoutMs = mcp.value("timeoutMs").toInt(8000);
+            if (oldConfig.timeoutMs < 1000)
+                oldConfig.timeoutMs = 1000;
+            m_mcpEnabledStates.insert(oldConfig.name, true);
+            m_mcpServers.append(oldConfig);
+            saveMcpServersToFile();
+        }
+        needsSave = true;
+    }
+
+    // Load MCP servers from mcp.json
+    loadMcpServersFromFile();
+
     // TTS
     if (root.contains("tts") && root.value("tts").isObject())
     {
@@ -340,6 +376,14 @@ void SettingsManager::save() const
     root["aiModel"]        = m_aiModel;
     root["aiSystemPrompt"] = m_aiSystemPrompt;
     root["aiStream"]       = m_aiStream;
+
+    QJsonObject mcpEnabledStatesObj;
+    for (auto it = m_mcpEnabledStates.begin(); it != m_mcpEnabledStates.end(); ++it)
+        mcpEnabledStatesObj.insert(it.key(), it.value());
+    root["mcpServerEnabledStates"] = mcpEnabledStatesObj;
+
+    // Note: MCP settings are now stored separately in mcp.json
+    // Note: Runtime is always enabled; useAgentRuntime was removed from config
 
     // TTS
     QJsonObject tts;
@@ -587,3 +631,173 @@ QString SettingsManager::aiSystemPrompt() const { return m_aiSystemPrompt; }
 void SettingsManager::setAiSystemPrompt(const QString& prompt) { m_aiSystemPrompt = prompt; save(); }
 bool SettingsManager::aiStreamEnabled() const { return m_aiStream; }
 void SettingsManager::setAiStreamEnabled(bool enabled) { m_aiStream = enabled; save(); }
+
+// MCP servers (from mcp.json)
+QList<McpServerConfig> SettingsManager::mcpServers() const
+{
+    return m_mcpServers;
+}
+
+void SettingsManager::setMcpServers(const QList<McpServerConfig>& servers)
+{
+    m_mcpServers = servers;
+    m_mcpEnabledStates.clear();
+    for (const McpServerConfig& server : m_mcpServers)
+        m_mcpEnabledStates.insert(server.name, server.enabled);
+    saveMcpServersToFile();
+    save();
+}
+
+void SettingsManager::addMcpServer(const McpServerConfig& server)
+{
+    // Remove any existing server with the same name
+    m_mcpServers.erase(std::remove_if(m_mcpServers.begin(), m_mcpServers.end(),
+        [&server](const McpServerConfig& s) { return s.name == server.name; }), m_mcpServers.end());
+    m_mcpServers.append(server);
+    m_mcpEnabledStates.insert(server.name, server.enabled);
+    saveMcpServersToFile();
+    save();
+}
+
+void SettingsManager::removeMcpServer(const QString& serverName)
+{
+    m_mcpServers.erase(std::remove_if(m_mcpServers.begin(), m_mcpServers.end(),
+        [&serverName](const McpServerConfig& s) { return s.name == serverName; }), m_mcpServers.end());
+    m_mcpEnabledStates.remove(serverName);
+    saveMcpServersToFile();
+    save();
+}
+
+void SettingsManager::updateMcpServer(const McpServerConfig& server)
+{
+    for (auto& s : m_mcpServers) {
+        if (s.name == server.name) {
+            s = server;
+            m_mcpEnabledStates.insert(server.name, server.enabled);
+            saveMcpServersToFile();
+            save();
+            return;
+        }
+    }
+}
+
+bool SettingsManager::hasMcpServer(const QString& serverName) const
+{
+    for (const auto& s : m_mcpServers) {
+        if (s.name == serverName)
+            return true;
+    }
+    return false;
+}
+
+McpServerConfig SettingsManager::mcpServer(const QString& serverName) const
+{
+    for (const auto& s : m_mcpServers) {
+        if (s.name == serverName)
+            return s;
+    }
+    return McpServerConfig();
+}
+
+QString SettingsManager::mcpJsonPath() const
+{
+    return QDir(configDir()).filePath(QStringLiteral("mcp.json"));
+}
+
+void SettingsManager::loadMcpServersFromFile()
+{
+    QFile f(mcpJsonPath());
+    if (!f.exists()) {
+        m_mcpServers.clear();
+        return;
+    }
+
+    if (!f.open(QIODevice::ReadOnly)) {
+        qWarning() << "Cannot open mcp.json:" << f.errorString();
+        return;
+    }
+
+    QJsonParseError err;
+    auto doc = QJsonDocument::fromJson(f.readAll(), &err);
+    if (err.error != QJsonParseError::NoError) {
+        qWarning() << "Failed to parse mcp.json:" << err.errorString();
+        return;
+    }
+
+    m_mcpServers.clear();
+
+    if (doc.isObject())
+    {
+        const QJsonObject root = doc.object();
+
+        // Preferred format: { "mcpServers": { "name": { ... } } }
+        if (root.value(QStringLiteral("mcpServers")).isObject())
+        {
+            const QJsonObject serversObj = root.value(QStringLiteral("mcpServers")).toObject();
+            for (auto it = serversObj.begin(); it != serversObj.end(); ++it)
+            {
+                if (!it.value().isObject())
+                    continue;
+                McpServerConfig config = McpServerConfig::fromJson(it.value().toObject());
+                config.name = it.key();
+                config.enabled = m_mcpEnabledStates.value(config.name, true);
+                if (!config.name.trimmed().isEmpty())
+                    m_mcpServers.append(config);
+            }
+            return;
+        }
+
+        // Backward compatibility: { "version": 1, "servers": [ ... ] }
+        if (root.value(QStringLiteral("servers")).isArray())
+        {
+            const QJsonArray serversArr = root.value(QStringLiteral("servers")).toArray();
+            for (const QJsonValue& val : serversArr)
+            {
+                if (!val.isObject())
+                    continue;
+                McpServerConfig config = McpServerConfig::fromJson(val.toObject());
+                config.enabled = m_mcpEnabledStates.value(config.name, true);
+                if (!config.name.trimmed().isEmpty())
+                    m_mcpServers.append(config);
+            }
+            return;
+        }
+    }
+
+    // Backward compatibility: old format was a plain array.
+    if (doc.isArray())
+    {
+        const QJsonArray serversArr = doc.array();
+        for (const QJsonValue& val : serversArr)
+        {
+            if (!val.isObject())
+                continue;
+            McpServerConfig config = McpServerConfig::fromJson(val.toObject());
+            config.enabled = m_mcpEnabledStates.value(config.name, true);
+            if (!config.name.trimmed().isEmpty())
+                m_mcpServers.append(config);
+        }
+    }
+}
+
+void SettingsManager::saveMcpServersToFile() const
+{
+    QDir dir(configDir());
+    if (!dir.exists()) dir.mkpath(".");
+
+    QJsonObject mcpServersObj;
+    for (const auto& server : m_mcpServers) {
+        if (!server.name.trimmed().isEmpty())
+            mcpServersObj.insert(server.name, server.toJson());
+    }
+
+    QJsonObject root;
+    root.insert(QStringLiteral("mcpServers"), mcpServersObj);
+
+    QFile f(mcpJsonPath());
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    } else {
+        qWarning() << "Cannot write mcp.json:" << f.errorString();
+    }
+}

@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkRequest>
+#include <QSet>
 #include <QUrl>
 
 namespace {
@@ -14,7 +15,125 @@ QString withErrorTag(const QString& message)
     if (message.startsWith(QStringLiteral("[Error]"))) return message;
     return QStringLiteral("[Error] %1").arg(message);
 }
+
+QJsonArray normalizeMessagesForProvider(const QJsonArray& messages)
+{
+    QJsonArray normalized;
+
+    auto normalizeTextRoleMessage = [](const QJsonObject& src, const QString& role) {
+        QJsonObject out;
+        out.insert(QStringLiteral("role"), role);
+        if (src.value(QStringLiteral("content")).isString())
+            out.insert(QStringLiteral("content"), src.value(QStringLiteral("content")).toString());
+        return out;
+    };
+
+    for (int i = 0; i < messages.size(); ++i)
+    {
+        const QJsonValue item = messages.at(i);
+        if (!item.isObject())
+            continue;
+
+        const QJsonObject src = item.toObject();
+        const QString role = src.value(QStringLiteral("role")).toString();
+        if (role.isEmpty())
+            continue;
+
+        if (role == QStringLiteral("assistant") && src.value(QStringLiteral("tool_calls")).isArray())
+        {
+            const QJsonArray rawToolCalls = src.value(QStringLiteral("tool_calls")).toArray();
+            QJsonArray sanitizedToolCalls;
+            QSet<QString> expectedIds;
+            for (const QJsonValue& tcVal : rawToolCalls)
+            {
+                if (!tcVal.isObject())
+                    continue;
+
+                const QJsonObject tcObj = tcVal.toObject();
+                const QString id = tcObj.value(QStringLiteral("id")).toString().trimmed();
+                const QJsonObject fn = tcObj.value(QStringLiteral("function")).toObject();
+                const QString fnName = fn.value(QStringLiteral("name")).toString().trimmed();
+                if (id.isEmpty() || fnName.isEmpty())
+                    continue;
+
+                QJsonObject fnObj;
+                fnObj.insert(QStringLiteral("name"), fnName);
+                fnObj.insert(QStringLiteral("arguments"), fn.value(QStringLiteral("arguments")).toString());
+
+                QJsonObject one;
+                one.insert(QStringLiteral("id"), id);
+                one.insert(QStringLiteral("type"), QStringLiteral("function"));
+                one.insert(QStringLiteral("function"), fnObj);
+                sanitizedToolCalls.append(one);
+                expectedIds.insert(id);
+            }
+
+            if (sanitizedToolCalls.isEmpty())
+            {
+                normalized.append(normalizeTextRoleMessage(src, role));
+                continue;
+            }
+
+            QJsonArray followingTools;
+            QSet<QString> seenIds;
+            int j = i + 1;
+            while (j < messages.size() && seenIds.size() < expectedIds.size())
+            {
+                const QJsonValue nextVal = messages.at(j);
+                if (!nextVal.isObject())
+                    break;
+
+                const QJsonObject nextObj = nextVal.toObject();
+                const QString nextRole = nextObj.value(QStringLiteral("role")).toString();
+                if (nextRole != QStringLiteral("tool"))
+                    break;
+
+                const QString toolCallId = nextObj.value(QStringLiteral("tool_call_id")).toString().trimmed();
+                if (toolCallId.isEmpty() || !expectedIds.contains(toolCallId) || seenIds.contains(toolCallId))
+                {
+                    ++j;
+                    continue;
+                }
+
+                QJsonObject toolMsg;
+                toolMsg.insert(QStringLiteral("role"), QStringLiteral("tool"));
+                toolMsg.insert(QStringLiteral("tool_call_id"), toolCallId);
+                toolMsg.insert(QStringLiteral("content"), nextObj.value(QStringLiteral("content")).toString());
+                followingTools.append(toolMsg);
+                seenIds.insert(toolCallId);
+                ++j;
+            }
+
+            if (seenIds.size() == expectedIds.size())
+            {
+                QJsonObject assistantMsg = normalizeTextRoleMessage(src, role);
+                assistantMsg.insert(QStringLiteral("tool_calls"), sanitizedToolCalls);
+                normalized.append(assistantMsg);
+                for (const QJsonValue& toolMsg : followingTools)
+                    normalized.append(toolMsg);
+                i = j - 1;
+            }
+            else
+            {
+                // Invalid pair in history: keep assistant content but strip tool_calls to satisfy strict providers.
+                normalized.append(normalizeTextRoleMessage(src, role));
+            }
+            continue;
+        }
+
+        if (role == QStringLiteral("tool"))
+        {
+            // Keep only tool messages that are already consumed as part of a validated
+            // assistant(tool_calls)->tool pair sequence above.
+            // Standalone/legacy tool messages can cause strict providers to reject requests.
+            continue;
+        }
+
+        normalized.append(normalizeTextRoleMessage(src, role));
+    }
+    return normalized;
 }
+} // namespace
 
 OpenAIChatClient::OpenAIChatClient(QObject* parent)
     : QObject(parent)
@@ -24,6 +143,16 @@ OpenAIChatClient::OpenAIChatClient(QObject* parent)
 void OpenAIChatClient::setConfig(ChatConfig cfg)
 {
     m_cfg = std::move(cfg);
+}
+
+OpenAIChatClient::ChatConfig OpenAIChatClient::config() const
+{
+    return m_cfg;
+}
+
+void OpenAIChatClient::setTools(const QJsonArray& tools)
+{
+    m_tools = tools;
 }
 
 QString OpenAIChatClient::normalizeBaseUrl(const QString& baseUrl)
@@ -73,7 +202,7 @@ void OpenAIChatClient::startChat(const QByteArray& messagesJson)
         return;
     }
 
-    QJsonArray messages = msgDoc.array();
+    QJsonArray messages = normalizeMessagesForProvider(msgDoc.array());
     if (!m_cfg.systemPrompt.trimmed().isEmpty())
     {
         QJsonObject sys;
@@ -89,6 +218,10 @@ void OpenAIChatClient::startChat(const QByteArray& messagesJson)
     body["model"] = m_cfg.model.isEmpty() ? QStringLiteral("gpt-4o-mini") : m_cfg.model;
     body["messages"] = messages;
     body["stream"] = m_cfg.stream;
+    if (!m_tools.isEmpty())
+    {
+        body["tools"] = m_tools;
+    }
 
     QNetworkRequest req(makeCompletionsUrl(m_cfg.baseUrl));
     req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -103,6 +236,9 @@ void OpenAIChatClient::startChat(const QByteArray& messagesJson)
     m_accumulated.clear();
     m_streamBuffer.clear();
     m_nonStreamBuffer.clear();
+    m_streamToolNameByIndex.clear();
+    m_streamToolArgsByIndex.clear();
+    m_streamToolIdByIndex.clear();
 
     m_reply = m_nam.post(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
     if (!m_reply)
@@ -133,15 +269,11 @@ void OpenAIChatClient::onReadyRead()
     const QByteArray chunk = m_reply->readAll();
     if (chunk.isEmpty()) return;
 
+    m_nonStreamBuffer += chunk;
+
     if (m_cfg.stream)
     {
         consumeSseLines(chunk);
-    }
-    else
-    {
-        // Non-stream: buffer raw payload; QNetworkReply::finished happens after last readyRead,
-        // but relying on readAll() in finished can be empty if already drained.
-        m_nonStreamBuffer += chunk;
     }
 }
 
@@ -151,7 +283,13 @@ void OpenAIChatClient::onFinished()
 
     if (m_reply->error() != QNetworkReply::NoError)
     {
-        const QString err = m_reply->errorString();
+        QString err = m_reply->errorString();
+        const int statusCode = m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = m_nonStreamBuffer + m_reply->readAll();
+        if (statusCode > 0)
+            err += QStringLiteral(" (HTTP %1)").arg(statusCode);
+        if (!body.trimmed().isEmpty())
+            err += QStringLiteral("\n") + QString::fromUtf8(body);
         cleanupReply();
         emit errorOccurred(withErrorTag(err));
         return;
@@ -176,6 +314,21 @@ void OpenAIChatClient::onFinished()
         {
             auto msg = choices.first().toObject().value("message").toObject();
             m_accumulated = msg.value("content").toString();
+
+            const QJsonArray toolCalls = msg.value("tool_calls").toArray();
+            for (const QJsonValue& item : toolCalls)
+            {
+                const QJsonObject callObj = item.toObject();
+                const QJsonObject fnObj = callObj.value("function").toObject();
+                const QString toolName = fnObj.value("name").toString();
+                const QString toolInput = fnObj.value("arguments").toString();
+                const QString toolCallId = callObj.value("id").toString();
+                if (!toolName.isEmpty() && !toolCallId.trimmed().isEmpty())
+                {
+                    emit toolCallRequested(toolName, toolInput, toolCallId);
+                    break;
+                }
+            }
         }
     }
 
@@ -237,7 +390,50 @@ void OpenAIChatClient::consumeSseLines(const QByteArray& chunk)
         if (choices.isEmpty())
             continue;
 
-        const auto delta = choices.first().toObject().value("delta").toObject();
+        const QJsonObject choice = choices.first().toObject();
+        const auto delta = choice.value("delta").toObject();
+
+        const QJsonArray toolCalls = delta.value("tool_calls").toArray();
+        for (const QJsonValue& item : toolCalls)
+        {
+            const QJsonObject callObj = item.toObject();
+            const int idx = callObj.value("index").toInt(-1);
+            if (idx < 0)
+                continue;
+
+            const QString callId = callObj.value("id").toString();
+            if (!callId.isEmpty())
+                m_streamToolIdByIndex[idx] = callId;
+
+            const QJsonObject fnObj = callObj.value("function").toObject();
+            const QString toolName = fnObj.value("name").toString();
+            const QString toolArgs = fnObj.value("arguments").toString();
+            if (!toolName.isEmpty())
+                m_streamToolNameByIndex[idx] = toolName;
+            if (!toolArgs.isEmpty())
+                m_streamToolArgsByIndex[idx] += toolArgs;
+        }
+
+        const QString finishReason = choice.value("finish_reason").toString();
+        if (finishReason == QStringLiteral("tool_calls"))
+        {
+            const QList<int> keys = m_streamToolNameByIndex.keys();
+            for (const int idx : keys)
+            {
+                const QString name = m_streamToolNameByIndex.value(idx);
+                const QString args = m_streamToolArgsByIndex.value(idx);
+                const QString callId = m_streamToolIdByIndex.value(idx);
+                if (!name.isEmpty() && !callId.trimmed().isEmpty())
+                {
+                    emit toolCallRequested(name, args, callId);
+                    break;
+                }
+            }
+            m_streamToolNameByIndex.clear();
+            m_streamToolArgsByIndex.clear();
+            m_streamToolIdByIndex.clear();
+        }
+
         const QString t = delta.value("content").toString();
         if (t.isEmpty())
             continue;

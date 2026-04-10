@@ -33,6 +33,7 @@ signals:
 
     // AI
     void aiSettingsChanged();
+    void mcpSettingsChanged();
     void requestOpenChat();
 
     // i18n
@@ -48,4 +49,6 @@ private:
     class Impl; QScopedPointer<Impl> d;
     void refreshSidebarThemeIndicator();
     void refreshModelList();
+    void rebuildMcpServerCards();
+    void scheduleMcpToolsReload();
 };

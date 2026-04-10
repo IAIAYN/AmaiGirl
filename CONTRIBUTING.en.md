@@ -142,8 +142,8 @@ cmake -S . -B build -G Ninja \
 
 ### 4. Coding & Commit Guidelines
 
-- Do not develop directly on `dev`; branch from `dev` using common prefixes such as `feat/xxx`, `fix/xxx`, `chore/xxx`, `docs/xxx`, `refactor/xxx`, `perf/xxx`, `test/xxx`, `build/xxx`, `ci/xxx`, `hotfix/xxx`, or `revert/xxx`
-- Avoid committing development work directly on `main`
+- It is not recommended to develop directly on `dev`; branch from `dev` using common prefixes such as `feat/xxx`, `fix/xxx`, `chore/xxx`, `docs/xxx`, `refactor/xxx`, `perf/xxx`, `test/xxx`, `build/xxx`, `ci/xxx`, `hotfix/xxx`, or `revert/xxx`
+- Do not commit development work directly on `main`
 - Keep changes focused and minimal
 - Avoid mixing unrelated refactors in one PR
 - Follow existing project style (naming, formatting, file layout)
@@ -154,6 +154,16 @@ cmake -S . -B build -G Ninja \
    - Globally disallow direct platform checks via `#ifdef` / `#ifndef`
 - Sync i18n (`res/i18n/*.ts`) when UI texts are changed
 - Update `NOTICE` / `THIRD_PARTY_LICENSES.md` / `THIRD_PARTY_LICENSES.en.md` when distribution/license-related content changes
+
+#### i18n Workflow
+
+- If you only need to regenerate `.qm` files from existing `.ts` files, run: `python3 scripts/compile_qm.py`
+- If you changed any Qt `tr()` / `QT_TR_NOOP()` strings or UI copy, run the full workflow: `python3 scripts/update_i18n.py --verbose`
+- `scripts/update_i18n.py` runs `lupdate` first to sync `res/i18n/*.ts`, then runs `lrelease` to generate the matching `.qm` files
+- The default source scan includes: `src/app`, `src/ai`, `src/common`, `src/engine`, `src/ui`
+- Add `--keep-obsolete` if you intentionally want to preserve obsolete translation entries
+- Qt Linguist tools are discovered from `PATH` by default, and can also be overridden explicitly with: `AMAI_LUPDATE`, `QT_LUPDATE`, `AMAI_LRELEASE`, `QT_LRELEASE`
+- If your Qt installation is not on `PATH`, the scripts also look at: `QT_HOST_BINS`, `QTDIR`, `QT_ROOT`, `QT_HOST_PATH`
 
 Run checks locally before pushing:
 

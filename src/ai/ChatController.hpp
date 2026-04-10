@@ -1,5 +1,9 @@
 #pragma once
 
+#include "ai/core/McpServerConfig.hpp"
+#include "ai/core/McpServerStatus.hpp"
+#include "ai/core/IToolRegistry.hpp"
+
 // Some third-party headers define macros like 'slots' that break Qt headers.
 // We MUST NOT define QT_NO_KEYWORDS here, otherwise Qt's 'signals/slots' keywords
 // are disabled and moc output won't compile.
@@ -9,9 +13,15 @@
 #include <QVector>
 #include <QString>
 #include <QElapsedTimer>
+#include <QJsonArray>
+#include <QHash>
+#include <map>
+#include <memory>
 
-class OpenAIChatClient;
-class OpenAITtsClient;
+class IChatProvider;
+class ITtsProvider;
+class IMcpAdapter;
+class AgentRuntime;
 class ChatWindow;
 class Renderer;
 class QAudioOutput;
@@ -26,12 +36,20 @@ public:
     void setChatWindow(ChatWindow* wnd);
     void setRenderer(Renderer* renderer);
 
+Q_SIGNALS:
+    void mcpServerStatusesChanged(const QList<McpServerStatus>& statuses);
+
 public slots:
     void onModelChanged(const QString& modelFolder, const QString& modelDir);
     void applyPreferredAudioOutput();
+    void reloadMcpTools();
+    void markMcpToolsDirty();
+    void refreshMcpServerStatuses();
+    void setMcpServerEnabled(const QString& serverName, bool enabled);
 
 private slots:
     void onSendRequested(const QString& modelFolder, const QString& userText);
+    void onAbortRequested();
     void onClearRequested(const QString& modelFolder);
 
     void onClientToken(const QString& token);
@@ -41,9 +59,15 @@ private slots:
     void onTtsFinished(const QString& outPath);
     void onTtsError(const QString& message);
 
+    void onRuntimeRequestStartTts(const QString& text, const QString& audioPath, bool streamingEnabled);
+    void onRuntimeRequestStartPlayback(const QString& audioPath);
+    void onRuntimeRequestStartPacedTextReveal(const QString& fullText);
+    void onRuntimeToolCallRequested(const QString& toolName, const QString& toolInput);
+
     void onLipTimer();
 
 private:
+    void dispatchSendNow(const QString& modelFolder, const QString& userText);
     void refreshClientConfig();
     void refreshTtsConfig();
     void saveClearedChat(const QString& modelFolder) const;
@@ -67,10 +91,21 @@ private:
 
     // --- paced text reveal (sync streaming text with TTS playback) ---
     void startPacedTextReveal(const QString& fullText);
+    void applyMcpTools(const QJsonArray& tools,
+                       int enabledServerCount,
+                       const QList<McpServerStatus>& statuses,
+                       const QHash<QString, McpServerConfig>& configCache,
+                       const QHash<QString, QJsonArray>& rawToolsCache,
+                       const QHash<QString, McpServerStatus>& statusCache);
+    bool hasActiveOutputPresentation() const;
+    void syncChatBusyUi();
+    void publishMcpServerStatuses(const QList<McpServerStatus>& statuses);
 
 private:
-    OpenAIChatClient* m_client{};
-    OpenAITtsClient* m_tts{};
+    IChatProvider* m_client{};
+    ITtsProvider* m_tts{};
+    AgentRuntime* m_runtime{};
+    std::map<QString, std::unique_ptr<IMcpAdapter>> m_mcpAdapters;
     ChatWindow* m_chatWindow{};
     Renderer* m_renderer{};
 
@@ -138,4 +173,19 @@ private:
     int m_pacedRevealChars{0};            // already revealed chars
     QTimer m_pacedRevealTimer;            // reveal timer
     bool m_pacedBubbleStarted{false};     // whether we already started the draft bubble for paced reveal
+    bool m_streamEnabledForCurrentReply{true};
+    bool m_ttsEnabledForCurrentReply{false};
+    bool m_runtimeBusyRequested{false};
+    bool m_mcpToolsDirty{true};
+    bool m_mcpToolsReloadInProgress{false};
+    std::unique_ptr<IToolRegistry> m_toolRegistry;
+    QList<McpServerStatus> m_mcpStatuses;
+    QHash<QString, McpServerConfig> m_mcpConfigCache;
+    QHash<QString, QJsonArray> m_mcpRawToolsCache;
+    QHash<QString, McpServerStatus> m_mcpStatusCache;
+    QString m_pendingSendModelFolder;
+    QString m_pendingSendText;
+    bool m_hasPendingSend{false};
+
+    bool m_useAgentRuntime{true};
 };

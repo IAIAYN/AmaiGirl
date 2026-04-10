@@ -25,8 +25,12 @@ NSWindow* nativeWindowFor(QWidget* widget)
     if (!topLevel)
         topLevel = widget;
 
+    // Avoid forcing native handle creation during close/teardown.
     if (!topLevel->testAttribute(Qt::WA_WState_Created))
-        topLevel->winId();
+        return nil;
+
+    if (!topLevel->isVisible())
+        return nil;
 
     NSView* view = reinterpret_cast<NSView*>(topLevel->winId());
     if (!view)

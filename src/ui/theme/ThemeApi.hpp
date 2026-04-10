@@ -5,13 +5,17 @@
 #include <QStringList>
 
 class QApplication;
+class QAbstractScrollArea;
 
 namespace Theme
 {
 enum class IconToken
 {
     ChatSend,
+    ChatStop,
+    ChatMcp,
     ChatClear,
+    ChatDelete,
     SettingsBasic,
     SettingsModel,
     SettingsAi,
@@ -25,6 +29,7 @@ QStringList availableThemeIds();
 
 void installApplicationStyle(QApplication& app, const QString& themeId = QString());
 void applyTheme(QApplication& app, const QString& themeId = QString());
+void installHoverScrollBars(QAbstractScrollArea* area, bool enableVertical = true, bool enableHorizontal = true);
 
 QString iconRelativePath(IconToken token, const QString& themeId = QString());
 QIcon themedIcon(IconToken token, const QString& themeId = QString());

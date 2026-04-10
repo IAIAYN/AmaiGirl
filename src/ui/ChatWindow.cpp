@@ -2,13 +2,18 @@
 
 #include "common/SettingsManager.hpp"
 #include "common/Utils.hpp"
+#include "ai/ConversationRepository.hpp"
 
 #include <QBoxLayout>
 #include <QDateTime>
+#include <QCoreApplication>
 #include <QDir>
 #include <QEvent>
 #include <QFile>
 #include <QFileInfo>
+#include <QFrame>
+#include <QGuiApplication>
+#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -17,14 +22,20 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QProcessEnvironment>
+#include <QDebug>
 #include <QScrollBar>
+#include <QScrollArea>
+#include <QScreen>
+#include <QSignalBlocker>
+#include <QSet>
 #include <QTimer>
-#include <QTextBrowser>
 #include <QTextEdit>
-#include <QTextOption>
+#include <QVBoxLayout>
 
 #include "ui/theme/ThemeApi.hpp"
 #include "ui/theme/ThemeWidgets.hpp"
+#include "ui/widgets/TypingDotsWidget.hpp"
 
 namespace {
 
@@ -36,6 +47,13 @@ constexpr int kComposerSendIconSize = 18;
 constexpr int kComposerFooterControlSize = 24;
 constexpr int kComposerClearIconSize = 19;
 constexpr qreal kComposerInputDocumentMargin = 3.0;
+constexpr int kMcpPopupWidth = 340;
+constexpr int kMcpPopupMaxHeight = 320;
+constexpr int kBubbleInnerPadX = 12;
+constexpr int kBubbleInnerPadY = 8;
+constexpr int kMessageSelectCheckBoxSize = 18;
+constexpr int kMessageSelectSlotWidth = 26;
+constexpr int kMessageSelectSlotHeight = 32;
 
 QPixmap circleAvatar(const QPixmap& src, int logicalSize, qreal devicePixelRatio)
 {
@@ -79,96 +97,308 @@ bool hasVisibleCharacters(const QString& text)
     return false;
 }
 
-QJsonArray loadChatMessages(const QString& modelFolder)
+bool chatLayoutDebugEnabled()
 {
-    QFile f(SettingsManager::instance().chatPathForModel(modelFolder));
-    if (!f.exists()) return {};
-    if (!f.open(QIODevice::ReadOnly)) return {};
-    QJsonParseError e;
-    const auto doc = QJsonDocument::fromJson(f.readAll(), &e);
-    if (e.error != QJsonParseError::NoError) return {};
-    return doc.object().value("messages").toArray();
+    static const bool enabled =
+        QProcessEnvironment::systemEnvironment().value(QStringLiteral("AMAI_CHAT_LAYOUT_DEBUG")) == QStringLiteral("1");
+    return enabled;
 }
 
-void saveChatMessages(const QString& modelFolder, const QJsonArray& messages)
+QString mcpStatusText(McpServerRuntimeState state)
 {
-    QDir dir(SettingsManager::instance().chatsDir());
-    if (!dir.exists()) { dir.mkpath("."); }
-
-    QJsonObject o;
-    o["messages"] = messages;
-
-    QFile f(SettingsManager::instance().chatPathForModel(modelFolder));
-    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    switch (state)
     {
-        f.write(QJsonDocument(o).toJson(QJsonDocument::Indented));
+    case McpServerRuntimeState::Disabled:
+        return QCoreApplication::translate("ChatWindow", "已关闭");
+    case McpServerRuntimeState::Starting:
+        return QCoreApplication::translate("ChatWindow", "正在启动");
+    case McpServerRuntimeState::Enabled:
+        return QCoreApplication::translate("ChatWindow", "已启用");
+    case McpServerRuntimeState::Unavailable:
+        return QCoreApplication::translate("ChatWindow", "无法使用");
     }
+
+    return QString();
 }
+
+class McpStatusIndicator final : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit McpStatusIndicator(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+        setFixedSize(12, 12);
+    }
+
+    void setState(McpServerRuntimeState state)
+    {
+        if (m_state == state)
+            return;
+        m_state = state;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent* event) override
+    {
+        Q_UNUSED(event);
+
+        QColor fill;
+        switch (m_state)
+        {
+        case McpServerRuntimeState::Disabled:
+            fill = QColor(0x9a, 0xa6, 0xb7);
+            break;
+        case McpServerRuntimeState::Starting:
+            fill = QColor(0xf0, 0xa0, 0x28);
+            break;
+        case McpServerRuntimeState::Enabled:
+            fill = QColor(0x33, 0xb8, 0x69);
+            break;
+        case McpServerRuntimeState::Unavailable:
+            fill = QColor(0xe3, 0x54, 0x4a);
+            break;
+        }
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(fill);
+        painter.drawEllipse(rect().adjusted(1, 1, -1, -1));
+    }
+
+private:
+    McpServerRuntimeState m_state{McpServerRuntimeState::Disabled};
+};
+
+class McpServerToggleRow final : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit McpServerToggleRow(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+        setObjectName(QStringLiteral("chatMcpPopupRow"));
+        setAttribute(Qt::WA_StyledBackground, true);
+
+        auto* layout = new QHBoxLayout(this);
+        layout->setContentsMargins(10, 8, 10, 8);
+        layout->setSpacing(10);
+
+        m_indicator = new McpStatusIndicator(this);
+        layout->addWidget(m_indicator, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+        auto* textLayout = new QVBoxLayout();
+        textLayout->setContentsMargins(0, 0, 0, 0);
+        textLayout->setSpacing(2);
+
+        m_nameLabel = new QLabel(this);
+        m_nameLabel->setObjectName(QStringLiteral("chatMcpPopupRowName"));
+        textLayout->addWidget(m_nameLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+        m_statusLabel = new QLabel(this);
+        m_statusLabel->setObjectName(QStringLiteral("chatMcpPopupRowStatus"));
+        textLayout->addWidget(m_statusLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+        layout->addLayout(textLayout, 1);
+
+        m_switch = new ThemeWidgets::Switch(this);
+        m_switch->setText(QString());
+        layout->addWidget(m_switch, 0, Qt::AlignRight | Qt::AlignVCenter);
+
+        connect(m_switch, &QCheckBox::toggled, this, [this](bool checked) {
+            emit enabledChanged(m_status.name, checked);
+        });
+    }
+
+    void setStatus(const McpServerStatus& status)
+    {
+        m_status = status;
+        if (m_indicator)
+            m_indicator->setState(status.state);
+        if (m_nameLabel)
+            m_nameLabel->setText(status.name);
+        if (m_statusLabel)
+            m_statusLabel->setText(mcpStatusText(status.state));
+        if (m_switch)
+        {
+            const QSignalBlocker blocker(m_switch);
+            m_switch->setChecked(status.enabled);
+            m_switch->setEnabled(status.state != McpServerRuntimeState::Starting);
+        }
+
+        const QString detail = status.detail.trimmed();
+        setToolTip(detail);
+        if (m_statusLabel)
+            m_statusLabel->setToolTip(detail);
+        if (m_nameLabel)
+            m_nameLabel->setToolTip(detail);
+    }
+
+Q_SIGNALS:
+    void enabledChanged(const QString& serverName, bool enabled);
+
+private:
+    McpServerStatus m_status;
+    McpStatusIndicator* m_indicator{nullptr};
+    QLabel* m_nameLabel{nullptr};
+    QLabel* m_statusLabel{nullptr};
+    ThemeWidgets::Switch* m_switch{nullptr};
+};
+
+class McpServerPopup final : public QFrame
+{
+    Q_OBJECT
+public:
+    explicit McpServerPopup(QWidget* parent = nullptr)
+        : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint)
+    {
+        setObjectName(QStringLiteral("chatMcpPopup"));
+        setAttribute(Qt::WA_StyledBackground, true);
+        setAttribute(Qt::WA_TranslucentBackground, true);
+
+        auto* root = new QVBoxLayout(this);
+        root->setContentsMargins(0, 0, 0, 0);
+        root->setSpacing(0);
+
+        m_card = new QWidget(this);
+        m_card->setObjectName(QStringLiteral("chatMcpPopupCard"));
+        m_card->setAttribute(Qt::WA_StyledBackground, true);
+        root->addWidget(m_card);
+
+        auto* cardLayout = new QVBoxLayout(m_card);
+        cardLayout->setContentsMargins(12, 12, 12, 12);
+        cardLayout->setSpacing(10);
+
+        m_titleLabel = new QLabel(m_card);
+        m_titleLabel->setObjectName(QStringLiteral("chatMcpPopupTitle"));
+        cardLayout->addWidget(m_titleLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+        m_scrollArea = new QScrollArea(m_card);
+        m_scrollArea->setObjectName(QStringLiteral("chatMcpPopupScroll"));
+        m_scrollArea->setWidgetResizable(true);
+        m_scrollArea->setFrameShape(QFrame::NoFrame);
+        m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        Theme::installHoverScrollBars(m_scrollArea, true, false);
+        cardLayout->addWidget(m_scrollArea, 1);
+
+        m_contentWidget = new QWidget(m_scrollArea);
+        m_contentWidget->setObjectName(QStringLiteral("chatMcpPopupContent"));
+        m_scrollArea->setWidget(m_contentWidget);
+
+        m_rowsLayout = new QVBoxLayout(m_contentWidget);
+        m_rowsLayout->setContentsMargins(0, 0, 0, 0);
+        m_rowsLayout->setSpacing(8);
+
+        refreshTexts();
+        resize(kMcpPopupWidth, 180);
+    }
+
+    void setStatuses(const QList<McpServerStatus>& statuses)
+    {
+        m_statuses = statuses;
+        rebuildRows();
+    }
+
+    void popupNearAnchor(QWidget* anchor)
+    {
+        if (!anchor)
+            return;
+
+        adjustSize();
+        QSize targetSize = sizeHint();
+        targetSize.setWidth(qMax(targetSize.width(), kMcpPopupWidth));
+        targetSize.setHeight(qMin(targetSize.height(), kMcpPopupMaxHeight));
+        resize(targetSize);
+
+        QPoint pos = anchor->mapToGlobal(QPoint(0, -height() - 8));
+        if (QScreen* screen = QGuiApplication::screenAt(pos))
+        {
+            const QRect avail = screen->availableGeometry();
+            if (pos.x() + width() > avail.right())
+                pos.setX(qMax(avail.left(), avail.right() - width()));
+            if (pos.x() < avail.left())
+                pos.setX(avail.left());
+            if (pos.y() < avail.top())
+                pos.setY(qMin(avail.bottom() - height(), anchor->mapToGlobal(QPoint(0, anchor->height() + 8)).y()));
+        }
+
+        move(pos);
+        show();
+        raise();
+        activateWindow();
+    }
+
+protected:
+    void changeEvent(QEvent* event) override
+    {
+        QFrame::changeEvent(event);
+        if (!event)
+            return;
+
+        if (event->type() == QEvent::LanguageChange)
+        {
+            refreshTexts();
+            rebuildRows();
+        }
+    }
+
+private:
+    void refreshTexts()
+    {
+        if (m_titleLabel)
+            m_titleLabel->setText(QCoreApplication::translate("ChatWindow", "MCP 列表"));
+    }
+
+    void rebuildRows()
+    {
+        if (!m_rowsLayout)
+            return;
+
+        while (QLayoutItem* item = m_rowsLayout->takeAt(0))
+        {
+            if (QWidget* widget = item->widget())
+                widget->deleteLater();
+            delete item;
+        }
+
+        if (m_statuses.isEmpty())
+        {
+            auto* emptyLabel = new QLabel(QCoreApplication::translate("ChatWindow", "暂无 MCP 服务器"), m_contentWidget);
+            emptyLabel->setObjectName(QStringLiteral("chatMcpPopupEmptyLabel"));
+            emptyLabel->setWordWrap(true);
+            m_rowsLayout->addWidget(emptyLabel, 0, Qt::AlignLeft | Qt::AlignTop);
+            m_rowsLayout->addStretch(1);
+            return;
+        }
+
+        for (const McpServerStatus& status : m_statuses)
+        {
+            auto* row = new McpServerToggleRow(m_contentWidget);
+            row->setStatus(status);
+            connect(row, &McpServerToggleRow::enabledChanged, this, &McpServerPopup::enabledChanged);
+            m_rowsLayout->addWidget(row);
+        }
+        m_rowsLayout->addStretch(1);
+    }
+
+Q_SIGNALS:
+    void enabledChanged(const QString& serverName, bool enabled);
+
+private:
+    QWidget* m_card{nullptr};
+    QLabel* m_titleLabel{nullptr};
+    QScrollArea* m_scrollArea{nullptr};
+    QWidget* m_contentWidget{nullptr};
+    QVBoxLayout* m_rowsLayout{nullptr};
+    QList<McpServerStatus> m_statuses;
+};
 
 class ChatMessageWidget final : public QWidget
 {
     Q_OBJECT
 public:
-    class TypingDotsWidget final : public QWidget
-    {
-    public:
-        explicit TypingDotsWidget(QWidget* parent = nullptr)
-            : QWidget(parent)
-        {
-            setFixedSize(30, 12);
-            m_timer.setInterval(220);
-            connect(&m_timer, &QTimer::timeout, this, [this] {
-                m_phase = (m_phase + 1) % 3;
-                update();
-            });
-        }
-
-        void setActive(bool active)
-        {
-            if (active)
-            {
-                if (!m_timer.isActive())
-                    m_timer.start();
-            }
-            else
-            {
-                if (m_timer.isActive())
-                    m_timer.stop();
-                m_phase = 0;
-                update();
-            }
-        }
-
-    protected:
-        void paintEvent(QPaintEvent* event) override
-        {
-            Q_UNUSED(event);
-
-            QPainter painter(this);
-            painter.setRenderHint(QPainter::Antialiasing, true);
-
-            const QColor base = palette().color(QPalette::Text);
-            const qreal radius = 2.2;
-            const qreal centerY = height() * 0.5;
-            const qreal startX = 7.0;
-            const qreal step = 8.0;
-
-            for (int i = 0; i < 3; ++i)
-            {
-                QColor c = base;
-                c.setAlphaF(i == m_phase ? 0.95 : 0.32);
-                painter.setPen(Qt::NoPen);
-                painter.setBrush(c);
-                const qreal cx = startX + i * step;
-                painter.drawEllipse(QPointF(cx, centerY), radius, radius);
-            }
-        }
-
-    private:
-        QTimer m_timer;
-        int m_phase{0};
-    };
-
     ChatMessageWidget(const QPixmap& avatar, const QString& text, bool isUser, QWidget* parent=nullptr)
         : QWidget(parent), m_isUser(isUser)
     {
@@ -180,13 +410,27 @@ public:
         m_avatar->setFixedSize(32, 32);
         setAvatar(avatar);
 
+        m_selectSlot = new QWidget(this);
+        m_selectSlot->setFixedSize(kMessageSelectSlotWidth, kMessageSelectSlotHeight);
+        auto* selectSlotLayout = new QVBoxLayout(m_selectSlot);
+        selectSlotLayout->setContentsMargins(4, 0, 4, 0);
+        selectSlotLayout->setSpacing(0);
+
+        m_selectCheck = new ThemeWidgets::ChatSelectionCheckBox(m_selectSlot);
+        m_selectCheck->setVisible(false);
+        m_selectCheck->setFocusPolicy(Qt::NoFocus);
+        m_selectCheck->setFixedSize(kMessageSelectCheckBoxSize, kMessageSelectCheckBoxSize);
+        m_selectSlot->setVisible(false);
+        m_selectSlot->setFixedWidth(0);
+        selectSlotLayout->addWidget(m_selectCheck, 0, Qt::AlignHCenter | Qt::AlignVCenter);
+
         m_bubbleBox = new ThemeWidgets::ChatBubbleBox(m_isUser, this);
         auto* bubbleLay = new QVBoxLayout(m_bubbleBox);
-        bubbleLay->setContentsMargins(12, 8, 12, 8);
+        bubbleLay->setContentsMargins(kBubbleInnerPadX, kBubbleInnerPadY, kBubbleInnerPadX, kBubbleInnerPadY);
         bubbleLay->setSpacing(0);
 
         m_text = new ThemeWidgets::ChatBubbleTextView(m_isUser, m_bubbleBox);
-        m_text->setText(text);
+        m_text->setPlainText(text);
         updateBubbleTextStyle();
 
         m_typingDots = new TypingDotsWidget(this);
@@ -194,6 +438,9 @@ public:
 
         bubbleLay->addWidget(m_text);
         m_bubbleBox->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+        // Keep selection checkbox in the same left column for both user and assistant rows.
+        lay->addWidget(m_selectSlot, 0, Qt::AlignLeft | Qt::AlignTop);
 
         if (m_isUser)
         {
@@ -213,6 +460,18 @@ public:
 
         // Initial sizing
         syncTextSizeToContent();
+
+        connect(m_text, &ThemeWidgets::ChatBubbleTextView::requestToggleMessageSelection, this,
+                [this](int sourceMessageIndex, bool checked) {
+            setMessageChecked(checked);
+            emit messageSelectionToggled(sourceMessageIndex, checked);
+        });
+
+        connect(m_selectCheck, &QCheckBox::toggled, this, [this](bool checked) {
+            m_checked = checked;
+            if (m_sourceMessageIndex >= 0)
+                emit messageSelectionToggled(m_sourceMessageIndex, checked);
+        });
     }
 
     void setAvatar(const QPixmap& avatar)
@@ -247,9 +506,7 @@ public:
         if (m_waitingForResponse && hasVisibleCharacters(t))
             setWaitingForResponse(false);
 
-        m_text->moveCursor(QTextCursor::End);
-        m_text->insertPlainText(t);
-        m_text->moveCursor(QTextCursor::End);
+        m_text->appendPlainText(t);
         updateBubbleTextStyle();
         syncTextSizeToContent();
         updateGeometry();
@@ -261,7 +518,7 @@ public:
         if (m_waitingForResponse && hasVisibleCharacters(c))
             setWaitingForResponse(false);
 
-        m_text->setText(c);
+        m_text->setPlainText(c);
         updateBubbleTextStyle();
         syncTextSizeToContent();
         updateGeometry();
@@ -293,19 +550,55 @@ public:
         return m_text ? m_text->toPlainText() : QString();
     }
 
+    void setSourceMessageIndex(int index)
+    {
+        m_sourceMessageIndex = index;
+        if (m_text)
+            m_text->setMessageSelectionState(m_sourceMessageIndex, m_checked);
+        if (m_sourceMessageIndex < 0)
+            setSelectionModeEnabled(false);
+    }
+
+    int sourceMessageIndex() const { return m_sourceMessageIndex; }
+
+    void setSelectionModeEnabled(bool enabled)
+    {
+        const bool visible = enabled && m_sourceMessageIndex >= 0;
+        if (m_selectSlot)
+        {
+            m_selectSlot->setVisible(visible);
+            m_selectSlot->setFixedWidth(visible ? kMessageSelectSlotWidth : 0);
+        }
+        if (m_selectCheck)
+            m_selectCheck->setVisible(visible);
+        updateGeometry();
+    }
+
+    void setMessageChecked(bool checked)
+    {
+        m_checked = checked;
+        if (m_text)
+            m_text->setMessageSelectionState(m_sourceMessageIndex, checked);
+        if (!m_selectCheck)
+            return;
+        const QSignalBlocker blocker(m_selectCheck);
+        m_selectCheck->setChecked(checked);
+    }
+
+    bool isMessageChecked() const { return m_checked; }
+
     QSize sizeHint() const override
     {
         // Height = max(avatar, visible content) + paddings.
         const int rowTopBottom = 16;
-        int contentH = 0;
-        if (m_waitingForResponse && m_typingDots)
-            contentH = m_typingDots->sizeHint().height();
-        else if (m_bubbleBox)
-            contentH = m_bubbleBox->height();
+        const int contentH = m_waitingForResponse ? m_waitingContentHeight : m_bubbleContentHeight;
 
         const int h = qMax(32, contentH) + rowTopBottom;
-        return { m_rowWidth, h };
+        return { 0, h };
     }
+
+Q_SIGNALS:
+    void messageSelectionToggled(int sourceMessageIndex, bool checked);
 
 private:
     void syncTextSizeToContent()
@@ -316,7 +609,10 @@ private:
         {
             m_text->setVisible(false);
             if (m_typingDots)
+            {
                 m_typingDots->setVisible(true);
+                m_waitingContentHeight = m_typingDots->sizeHint().height();
+            }
             if (m_bubbleBox)
                 m_bubbleBox->setVisible(false);
             return;
@@ -328,67 +624,40 @@ private:
         if (m_bubbleBox)
             m_bubbleBox->setVisible(true);
 
-        m_text->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        m_text->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-
-        QTextDocument* doc = m_text->document();
-        doc->setDocumentMargin(0.0);
-
-        const QFontMetrics fm(m_text->font());
-
         // Only cap MAX width (3/4 of window). Don't enforce a minimum width.
         const int maxW = qMax(1, m_maxBubbleWidth);
-
-        // Phase 1: measure ideal width without wrapping.
-        {
-            QTextOption opt;
-            opt.setWrapMode(QTextOption::NoWrap);
-            doc->setDefaultTextOption(opt);
-        }
-        doc->setTextWidth(-1);
-        doc->adjustSize();
-
-        const int idealW = qMax(1, int(std::ceil(doc->idealWidth())));
-
-        const bool empty = m_text->toPlainText().isEmpty();
-        int w = empty ? fm.horizontalAdvance(QStringLiteral("…")) : idealW;
-        w = qMin(w, maxW);
-
-        // Phase 2: if clamped, enable wrapping and compute final height.
-        if (w >= maxW)
-        {
-            QTextOption opt = doc->defaultTextOption();
-            opt.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-            doc->setDefaultTextOption(opt);
-            doc->setTextWidth(w);
-        }
-        else
-        {
-            QTextOption opt;
-            opt.setWrapMode(QTextOption::NoWrap);
-            doc->setDefaultTextOption(opt);
-            doc->setTextWidth(-1);
-        }
-
-        doc->adjustSize();
-
-        int textH = int(std::ceil(doc->size().height()));
-        textH = qMax(textH, fm.height());
-
-        // Final width: use the actual document width (after wrapping decisions).
-        // This avoids the "tiny horizontal scrollbar" caused by rounding/viewport mismatches.
-        const int docW = qMax(1, int(std::ceil(doc->size().width())));
-        const int finalW = qMin(docW, maxW);
-
-        m_text->setFixedWidth(finalW);
-        m_text->setFixedHeight(textH);
+        const QSize laidOutTextSize = m_text->layoutForMaxWidth(maxW);
+        const int textWidgetW = qMax(1, laidOutTextSize.width());
+        const int textH = qMax(1, laidOutTextSize.height());
         if (m_bubbleBox)
         {
-            m_bubbleBox->setFixedSize(finalW + 24, textH + 16);
+            // Bubble size should include exactly one layer of inner padding from bubble layout.
+            m_bubbleContentWidth = textWidgetW + kBubbleInnerPadX * 2;
+            m_bubbleContentHeight = textH + kBubbleInnerPadY * 2;
+            m_bubbleBox->setFixedSize(
+                m_bubbleContentWidth,
+                m_bubbleContentHeight);
             m_bubbleBox->updateGeometry();
         }
 
+        if (chatLayoutDebugEnabled())
+        {
+            qInfo().noquote()
+                << "[chat-layout][row]"
+                << "text=" << m_text->toPlainText().left(80).replace(QLatin1Char('\n'), QLatin1Char(' '))
+                << "maxW=" << maxW
+                << "textW=" << textWidgetW
+                << "textH=" << textH
+                << "bubbleW=" << m_bubbleContentWidth
+                << "bubbleH=" << m_bubbleContentHeight
+                << "rowW=" << m_rowWidth
+                << "widgetW=" << width();
+        }
+
         m_text->updateGeometry();
+        if (layout())
+            layout()->activate();
+        updateGeometry();
     }
 
     bool m_isUser{false};
@@ -396,9 +665,16 @@ private:
     ThemeWidgets::ChatBubbleBox* m_bubbleBox{nullptr};
     ThemeWidgets::ChatBubbleTextView* m_text{nullptr};
     TypingDotsWidget* m_typingDots{nullptr};
+    QWidget* m_selectSlot{nullptr};
+    ThemeWidgets::ChatSelectionCheckBox* m_selectCheck{nullptr};
     int m_maxBubbleWidth{360};
     int m_rowWidth{520};
+    int m_bubbleContentWidth{0};
+    int m_bubbleContentHeight{0};
+    int m_waitingContentHeight{0};
     bool m_waitingForResponse{false};
+    int m_sourceMessageIndex{-1};
+    bool m_checked{false};
 };
 
 } // namespace
@@ -410,11 +686,18 @@ public:
 
     QWidget* central{nullptr};
     ThemeWidgets::ChatListWidget* list{nullptr};
+    QWidget* selectionActionBar{nullptr};
     QWidget* composerCard{nullptr};
     ThemeWidgets::ChatComposerEdit* input{nullptr};
     ThemeWidgets::IconButton* sendBtn{nullptr};
+    ThemeWidgets::IconButton* mcpBtn{nullptr};
     ThemeWidgets::IconButton* clearBtn{nullptr};
+    ThemeWidgets::IconButton* deleteSelectedBtn{nullptr};
+    QLabel* deleteSelectedTextLabel{nullptr};
+    QLabel* selectedCountLabel{nullptr};
     QLabel* countLabel{nullptr};
+    McpServerPopup* mcpPopup{nullptr};
+    QList<McpServerStatus> mcpStatuses;
 
     QPixmap userAvatar;
     QPixmap aiAvatar;
@@ -423,19 +706,104 @@ public:
 
     QJsonArray messages; // simplified format: {role, content}
     bool currentAiBubbleIsDraft{false};
+    bool persistenceEnabled{true};
+    bool messageSelectMode{false};
+    QSet<int> selectedMessageIndices;
 
     bool relayoutQueued{false};
+    bool busy{false};
 
     int streamingAssistantIndex{-1};
+
+    bool hasSendableInput() const
+    {
+        return input && !input->toPlainText().trimmed().isEmpty();
+    }
+
+    Theme::IconToken composerButtonIconToken() const
+    {
+        return busy ? Theme::IconToken::ChatStop : Theme::IconToken::ChatSend;
+    }
+
+    QString composerButtonToolTip() const
+    {
+        return QCoreApplication::translate("ChatWindow", busy ? "中止" : "发送");
+    }
+
+    void updateSendButtonState()
+    {
+        if (!sendBtn)
+            return;
+
+        sendBtn->setTone(busy ? ThemeWidgets::IconButton::Tone::Danger
+                              : ThemeWidgets::IconButton::Tone::Accent);
+        sendBtn->setEnabled(busy || hasSendableInput());
+        sendBtn->setToolTip(composerButtonToolTip());
+        sendBtn->setIcon(Theme::themedIcon(composerButtonIconToken()));
+    }
+
+    int findAssistantSourceIndexFromDisk(const QString& content) const
+    {
+        if (modelFolder.isEmpty())
+            return -1;
+
+        const QJsonArray diskMessages = ConversationRepository::loadMessages(modelFolder);
+        if (diskMessages.isEmpty())
+            return -1;
+
+        for (int i = diskMessages.size() - 1; i >= 0; --i)
+        {
+            const auto o = diskMessages.at(i).toObject();
+            if (o.value(QStringLiteral("role")).toString() != QStringLiteral("assistant"))
+                continue;
+
+            const QString diskContent = o.value(QStringLiteral("content")).toString();
+            if (!content.isEmpty() && diskContent == content)
+                return i;
+            if (content.isEmpty() && diskContent.trimmed().isEmpty())
+                return i;
+        }
+
+        if (!content.isEmpty())
+        {
+            for (int i = diskMessages.size() - 1; i >= 0; --i)
+            {
+                const auto o = diskMessages.at(i).toObject();
+                if (o.value(QStringLiteral("role")).toString() != QStringLiteral("assistant"))
+                    continue;
+                const QString diskContent = o.value(QStringLiteral("content")).toString();
+                if (diskContent.startsWith(content) || content.startsWith(diskContent))
+                    return i;
+            }
+        }
+
+        return -1;
+    }
+
+    void bindCurrentAiBubbleSourceIndexIfNeeded()
+    {
+        if (!currentAiBubble)
+            return;
+        if (currentAiBubble->sourceMessageIndex() >= 0)
+            return;
+
+        const int idx = findAssistantSourceIndexFromDisk(currentAiBubble->content());
+        if (idx < 0)
+            return;
+
+        currentAiBubble->setSourceMessageIndex(idx);
+        currentAiBubble->setSelectionModeEnabled(messageSelectMode);
+        currentAiBubble->setMessageChecked(selectedMessageIndices.contains(idx));
+    }
 
     void scheduleRelayout(QObject* context)
     {
         if (relayoutQueued) return;
         relayoutQueued = true;
-        QMetaObject::invokeMethod(context, [this]{
+        QTimer::singleShot(16, context, [this]{
             relayoutQueued = false;
             applyBubbleWidthForAll();
-        }, Qt::QueuedConnection);
+        });
     }
 
     int viewportRowWidth() const
@@ -455,7 +823,19 @@ public:
     void applyBubbleWidthForAll()
     {
         if (!list) return;
+        const int rowW = viewportRowWidth();
         const int maxW = computeBubbleMaxWidth();
+
+        if (chatLayoutDebugEnabled())
+        {
+            qInfo().noquote()
+                << "[chat-layout][relayout]"
+                << "viewportW=" << ((list && list->viewport()) ? list->viewport()->width() : -1)
+                << "rowW=" << rowW
+                << "maxBubbleW=" << maxW
+                << "items=" << list->count();
+        }
+
         for (int i = 0; i < list->count(); ++i)
         {
             auto* item = list->item(i);
@@ -463,9 +843,9 @@ public:
             if (auto* w = qobject_cast<ChatMessageWidget*>(list->itemWidget(item)))
             {
                 w->setMaxBubbleWidth(maxW);
-                w->setRowWidth(viewportRowWidth());
+                w->setRowWidth(0);
                 const QSize hint = w->sizeHint();
-                item->setSizeHint(QSize(viewportRowWidth(), hint.height()));
+                item->setSizeHint(QSize(0, hint.height()));
             }
         }
         forceListRelayout();
@@ -498,6 +878,113 @@ public:
     {
         if (!countLabel || !input) return;
         countLabel->setText(QString::number(input->toPlainText().size()));
+        updateSendButtonState();
+    }
+
+    void updateMcpPopup()
+    {
+        if (mcpPopup)
+            mcpPopup->setStatuses(mcpStatuses);
+    }
+
+    static bool isVisibleMessageObject(const QJsonObject& o)
+    {
+        const QString role = o.value(QStringLiteral("role")).toString();
+        const QString content = o.value(QStringLiteral("content")).toString();
+        if (role == QStringLiteral("tool"))
+            return false;
+        if (role == QStringLiteral("assistant") && content.trimmed().isEmpty())
+            return false;
+        return role == QStringLiteral("user") || role == QStringLiteral("assistant");
+    }
+
+    void updateSelectionUi()
+    {
+        if (selectionActionBar)
+            selectionActionBar->setVisible(messageSelectMode);
+
+        if (deleteSelectedBtn)
+        {
+            deleteSelectedBtn->setVisible(messageSelectMode);
+            deleteSelectedBtn->setEnabled(messageSelectMode && !selectedMessageIndices.isEmpty());
+        }
+
+        if (deleteSelectedTextLabel)
+            deleteSelectedTextLabel->setVisible(messageSelectMode);
+
+        if (selectedCountLabel)
+        {
+            selectedCountLabel->setVisible(messageSelectMode);
+            selectedCountLabel->setText(QCoreApplication::translate("ChatWindow", "已勾选 %1 条").arg(selectedMessageIndices.size()));
+        }
+
+        if (!list)
+            return;
+
+        for (int i = 0; i < list->count(); ++i)
+        {
+            auto* item = list->item(i);
+            if (!item)
+                continue;
+            auto* bubble = qobject_cast<ChatMessageWidget*>(list->itemWidget(item));
+            if (!bubble)
+                continue;
+            bubble->setSelectionModeEnabled(messageSelectMode);
+            bubble->setMessageChecked(selectedMessageIndices.contains(bubble->sourceMessageIndex()));
+        }
+    }
+
+    void setMessageSelection(int sourceMessageIndex, bool checked)
+    {
+        if (sourceMessageIndex < 0)
+            return;
+
+        if (checked)
+        {
+            messageSelectMode = true;
+            selectedMessageIndices.insert(sourceMessageIndex);
+        }
+        else
+        {
+            selectedMessageIndices.remove(sourceMessageIndex);
+            if (selectedMessageIndices.isEmpty())
+                messageSelectMode = false;
+        }
+
+        updateSelectionUi();
+    }
+
+    bool deleteSelectedMessages(QWidget* parent, const QString& modelFolder)
+    {
+        if (selectedMessageIndices.isEmpty())
+            return false;
+
+        const auto ret = QMessageBox::question(parent,
+                                               QCoreApplication::translate("ChatWindow", "确认"),
+                                               QCoreApplication::translate("ChatWindow", "确定要删除已勾选的消息吗？"));
+        if (ret != QMessageBox::Yes)
+            return false;
+
+        QList<int> removeIndices = selectedMessageIndices.values();
+        std::sort(removeIndices.begin(), removeIndices.end(), std::greater<int>());
+        for (const int idx : removeIndices)
+        {
+            if (idx < 0 || idx >= messages.size())
+                continue;
+            messages.removeAt(idx);
+        }
+
+        selectedMessageIndices.clear();
+        messageSelectMode = false;
+        currentAiBubble = nullptr;
+        currentAiBubbleIsDraft = false;
+        streamingAssistantIndex = -1;
+
+        if (!modelFolder.isEmpty())
+            ConversationRepository::saveMessages(modelFolder, messages);
+
+        rebuildFromMessages();
+        return true;
     }
 
     void rebuildFromMessages()
@@ -506,12 +993,17 @@ public:
         currentAiBubble = nullptr;
 
         const int maxW = computeBubbleMaxWidth();
+        const int rowW = viewportRowWidth();
 
-        for (const auto& v : messages)
+        for (int srcIndex = 0; srcIndex < messages.size(); ++srcIndex)
         {
-            const auto o = v.toObject();
+            const auto o = messages.at(srcIndex).toObject();
             const QString role = o.value("role").toString();
             const QString content = o.value("content").toString();
+
+            if (!isVisibleMessageObject(o))
+                continue;
+
             const bool isUser = (role == "user");
 
             auto* item = new QListWidgetItem(list);
@@ -519,16 +1011,23 @@ public:
 
             auto* bubble = new ChatMessageWidget(isUser ? userAvatar : aiAvatar, content, isUser);
             bubble->setMaxBubbleWidth(maxW);
-            bubble->setRowWidth(viewportRowWidth());
+            bubble->setRowWidth(0);
+            bubble->setSourceMessageIndex(srcIndex);
+            bubble->setSelectionModeEnabled(messageSelectMode);
+            bubble->setMessageChecked(selectedMessageIndices.contains(srcIndex));
+            QObject::connect(bubble, &ChatMessageWidget::messageSelectionToggled, list, [this](int index, bool checked) {
+                setMessageSelection(index, checked);
+            });
 
             const QSize hint = bubble->sizeHint();
-            item->setSizeHint(QSize(viewportRowWidth(), hint.height()));
+            item->setSizeHint(QSize(0, hint.height()));
             list->addItem(item);
             list->setItemWidget(item, bubble);
         }
 
         list->scrollToBottom();
         forceListRelayout();
+        updateSelectionUi();
     }
 
     void pushMessage(const QString& role, const QString& content)
@@ -537,11 +1036,18 @@ public:
         o["role"] = role;
         o["content"] = content;
         messages.append(o);
-        saveChatMessages(modelFolder, messages);
+        if (persistenceEnabled)
+            ConversationRepository::saveMessages(modelFolder, messages);
     }
 
     void beginStreamingAssistant()
     {
+        if (!persistenceEnabled)
+        {
+            streamingAssistantIndex = -1;
+            return;
+        }
+
         // Ensure persisted history has exactly one assistant placeholder for this reply.
         streamingAssistantIndex = -1;
         if (modelFolder.isEmpty()) return;
@@ -563,17 +1069,20 @@ public:
         o["content"] = QString();
         messages.append(o);
         streamingAssistantIndex = messages.size() - 1;
-        saveChatMessages(modelFolder, messages);
+        ConversationRepository::saveMessages(modelFolder, messages);
     }
 
     void updateStreamingAssistantContent(const QString& content)
     {
+        if (!persistenceEnabled)
+            return;
+
         if (streamingAssistantIndex < 0 || streamingAssistantIndex >= messages.size()) return;
         auto o = messages.at(streamingAssistantIndex).toObject();
         if (o.value("role").toString() != QStringLiteral("assistant")) return;
         o["content"] = content;
         messages[streamingAssistantIndex] = o;
-        saveChatMessages(modelFolder, messages);
+        ConversationRepository::saveMessages(modelFolder, messages);
     }
 
     void finalizeStreamingAssistant(const QString& finalText)
@@ -614,8 +1123,17 @@ ChatWindow::ChatWindow(QWidget* parent)
     d->list->setSelectionMode(QAbstractItemView::NoSelection);
     d->list->setFocusPolicy(Qt::NoFocus);
     d->list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    d->list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     d->list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     root->addWidget(d->list, 1);
+
+    d->selectionActionBar = new QWidget(d->central);
+    d->selectionActionBar->setObjectName(QStringLiteral("chatSelectionActionBar"));
+    auto* selectionBarLayout = new QHBoxLayout(d->selectionActionBar);
+    selectionBarLayout->setContentsMargins(2, 0, 2, 0);
+    selectionBarLayout->setSpacing(8);
+    d->selectionActionBar->setVisible(false);
+    root->addWidget(d->selectionActionBar, 0);
 
     d->composerCard = new QWidget(d->central);
     d->composerCard->setObjectName(QStringLiteral("chatComposerCard"));
@@ -634,8 +1152,7 @@ ChatWindow::ChatWindow(QWidget* parent)
     d->sendBtn->setTone(ThemeWidgets::IconButton::Tone::Accent);
     d->sendBtn->setIconLogicalSize(kComposerSendIconSize);
     d->sendBtn->setFixedSize(kComposerSendButtonSize, kComposerSendButtonSize);
-    d->sendBtn->setToolTip(tr("发送"));
-    d->sendBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatSend));
+    d->updateSendButtonState();
 
     editorRow->addWidget(d->input, 1);
     editorRow->addWidget(d->sendBtn, 0, Qt::AlignRight | Qt::AlignBottom);
@@ -652,13 +1169,47 @@ ChatWindow::ChatWindow(QWidget* parent)
     d->clearBtn->setFixedSize(kComposerFooterControlSize, kComposerFooterControlSize);
     d->clearBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatClear));
 
+    d->mcpBtn = new ThemeWidgets::IconButton(d->composerCard);
+    d->mcpBtn->setTone(ThemeWidgets::IconButton::Tone::Ghost);
+    d->mcpBtn->setIconLogicalSize(kComposerClearIconSize);
+    d->mcpBtn->setToolTip(tr("MCP"));
+    d->mcpBtn->setFixedSize(kComposerFooterControlSize, kComposerFooterControlSize);
+    d->mcpBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatMcp));
+
+    d->mcpPopup = new McpServerPopup(this);
+    d->mcpPopup->setStatuses(d->mcpStatuses);
+
+    d->deleteSelectedBtn = new ThemeWidgets::IconButton(d->selectionActionBar);
+    d->deleteSelectedBtn->setTone(ThemeWidgets::IconButton::Tone::Ghost);
+    d->deleteSelectedBtn->setIconLogicalSize(kComposerClearIconSize);
+    d->deleteSelectedBtn->setToolTip(tr("删除"));
+    d->deleteSelectedBtn->setFixedSize(kComposerFooterControlSize, kComposerFooterControlSize);
+    d->deleteSelectedBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatDelete));
+    d->deleteSelectedBtn->setVisible(false);
+
+    d->deleteSelectedTextLabel = new QLabel(tr("删除"), d->selectionActionBar);
+    d->deleteSelectedTextLabel->setObjectName(QStringLiteral("chatDeleteSelectedTextLabel"));
+    d->deleteSelectedTextLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+    d->deleteSelectedTextLabel->setVisible(false);
+
+    d->selectedCountLabel = new QLabel(tr("已勾选 0 条"), d->selectionActionBar);
+    d->selectedCountLabel->setObjectName(QStringLiteral("chatSelectedCountLabel"));
+    d->selectedCountLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+    d->selectedCountLabel->setVisible(false);
+
     d->countLabel = new QLabel(QStringLiteral("0"), d->composerCard);
     d->countLabel->setObjectName(QStringLiteral("chatComposerCountLabel"));
     d->countLabel->setAlignment(Qt::AlignCenter);
     d->countLabel->setFixedSize(kComposerSendButtonSize, kComposerFooterControlSize);
     d->countLabel->setContentsMargins(0, 5, 0, 0);
 
+    footerRow->addWidget(d->mcpBtn, 0, Qt::AlignLeft | Qt::AlignVCenter);
     footerRow->addWidget(d->clearBtn, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    selectionBarLayout->addWidget(d->deleteSelectedBtn, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    selectionBarLayout->addWidget(d->deleteSelectedTextLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    selectionBarLayout->addWidget(d->selectedCountLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    selectionBarLayout->addStretch(1);
+
     footerRow->addStretch(1);
     footerRow->addWidget(d->countLabel, 0, Qt::AlignRight | Qt::AlignVCenter);
     composerLayout->addLayout(footerRow);
@@ -676,7 +1227,7 @@ ChatWindow::ChatWindow(QWidget* parent)
 
     auto sendNow = [this]{
         if (d->modelFolder.isEmpty()) return;
-        if (!d->sendBtn->isEnabled()) return; // already busy/disabled
+        if (d->busy) return;
 
         const QString text = d->input->toPlainText().trimmed();
         if (text.isEmpty()) return;
@@ -693,14 +1244,26 @@ ChatWindow::ChatWindow(QWidget* parent)
 
         d->input->clear();
 
-        // Optimistic disable to prevent rapid double-send before controller flips busy.
-        d->sendBtn->setEnabled(false);
-        d->input->setEnabled(false);
-
         emit requestSendMessage(d->modelFolder, text);
     };
 
-    connect(d->sendBtn, &QToolButton::clicked, this, sendNow);
+    auto abortNow = [this] {
+        if (!d->busy)
+            return;
+
+        emit requestAbortCurrentTask();
+    };
+
+    connect(d->sendBtn, &QToolButton::clicked, this, [sendNow, abortNow, this] {
+        if (!d)
+            return;
+        if (d->busy)
+        {
+            abortNow();
+            return;
+        }
+        sendNow();
+    });
     connect(d->input, &ThemeWidgets::ChatComposerEdit::sendRequested, this, sendNow);
     connect(d->input, &ThemeWidgets::ChatComposerEdit::metricsChanged, this, [this] {
         if (!d) return;
@@ -718,17 +1281,41 @@ ChatWindow::ChatWindow(QWidget* parent)
         emit requestClearChat(d->modelFolder);
     });
 
-    // Responsive relayout on resize
-    connect(d->list->verticalScrollBar(), &QScrollBar::rangeChanged, this, [this]{
-        d->applyBubbleWidthForAll();
+    connect(d->mcpBtn, &QToolButton::clicked, this, [this] {
+        if (!d || !d->mcpPopup || !d->mcpBtn)
+            return;
+
+        if (d->mcpPopup->isVisible())
+        {
+            d->mcpPopup->hide();
+            return;
+        }
+
+        d->updateMcpPopup();
+        d->mcpPopup->popupNearAnchor(d->mcpBtn);
+        if (d->mcpStatuses.isEmpty())
+            emit requestRefreshMcpServerStatuses();
     });
 
+    connect(d->mcpPopup, &McpServerPopup::enabledChanged, this, [this](const QString& serverName, bool enabled) {
+        emit requestSetMcpServerEnabled(serverName, enabled);
+    });
+
+    connect(d->deleteSelectedBtn, &QToolButton::clicked, this, [this] {
+        if (!d)
+            return;
+        if (d->deleteSelectedMessages(this, d->modelFolder))
+            d->scheduleRelayout(this);
+    });
+
+    // Responsive relayout on resize
     // Also update widths when the viewport itself changes size (more immediate than rangeChanged)
     d->list->viewport()->installEventFilter(this);
 
     // Initial relayout after show; without this some bubbles get an incorrect first width.
     d->updateInputMetrics();
     d->updateInputCount();
+    d->updateSelectionUi();
     d->scheduleRelayout(this);
 }
 
@@ -760,6 +1347,11 @@ void ChatWindow::setCurrentModel(const QString& modelFolder, const QString& mode
         d->aiAvatar = d->userAvatar;
     }
 
+    d->messageSelectMode = false;
+    d->selectedMessageIndices.clear();
+    d->updateSelectionUi();
+    d->updateMcpPopup();
+
     loadFromDisk(modelFolder);
 
     // After rebuilding, ensure widths match the current viewport size.
@@ -768,13 +1360,95 @@ void ChatWindow::setCurrentModel(const QString& modelFolder, const QString& mode
 
 void ChatWindow::setBusy(bool busy)
 {
-    d->sendBtn->setEnabled(!busy);
-    d->input->setEnabled(!busy);
+    if (!d)
+        return;
+
+    d->busy = busy;
+    d->updateSendButtonState();
+}
+
+void ChatWindow::sealCurrentAiBubble()
+{
+    if (!d || !d->currentAiBubble)
+        return;
+
+    d->currentAiBubble->setWaitingForResponse(false);
+    d->bindCurrentAiBubbleSourceIndexIfNeeded();
+    d->currentAiBubbleIsDraft = false;
+    d->currentAiBubble = nullptr;
+    d->scheduleRelayout(this);
+}
+
+void ChatWindow::setPersistenceEnabled(bool enabled)
+{
+    if (!d)
+        return;
+    d->persistenceEnabled = enabled;
+}
+
+void ChatWindow::setMcpServerStatuses(const QList<McpServerStatus>& statuses)
+{
+    if (!d)
+        return;
+
+    d->mcpStatuses = statuses;
+    d->updateMcpPopup();
+}
+
+void ChatWindow::cancelCurrentAiDraftBubble()
+{
+    if (!d || !d->currentAiBubble || !d->list)
+        return;
+
+    // Remove only the in-flight UI draft bubble; persisted history remains runtime-owned.
+    for (int i = d->list->count() - 1; i >= 0; --i)
+    {
+        QListWidgetItem* item = d->list->item(i);
+        if (!item)
+            continue;
+
+        QWidget* widget = d->list->itemWidget(item);
+        if (widget != d->currentAiBubble)
+            continue;
+
+        QWidget* taken = d->list->itemWidget(item);
+        d->list->removeItemWidget(item);
+        delete taken;
+        delete d->list->takeItem(i);
+        break;
+    }
+
+    d->currentAiBubble = nullptr;
+    d->currentAiBubbleIsDraft = false;
+    d->scheduleRelayout(this);
 }
 
 void ChatWindow::appendUserMessage(const QString& text)
 {
     if (d->modelFolder.isEmpty()) return;
+
+    if (!d->persistenceEnabled)
+    {
+        d->messages = ConversationRepository::loadMessages(d->modelFolder);
+        d->rebuildFromMessages();
+        d->scheduleRelayout(this);
+        return;
+    }
+
+    // Runtime migration path may persist the same user message before UI sync.
+    // Keep this method idempotent to avoid duplicated user rows.
+    if (!d->messages.isEmpty())
+    {
+        const auto last = d->messages.last().toObject();
+        if (last.value("role").toString() == QStringLiteral("user")
+            && last.value("content").toString() == text)
+        {
+            d->rebuildFromMessages();
+            d->scheduleRelayout(this);
+            return;
+        }
+    }
+
     d->pushMessage("user", text);
     d->rebuildFromMessages();
     d->scheduleRelayout(this);
@@ -789,7 +1463,8 @@ void ChatWindow::appendAiMessageStart()
         return;
 
     // Persist a placeholder assistant message ONCE so streaming doesn't create multiple assistant rows.
-    d->beginStreamingAssistant();
+    if (d->persistenceEnabled)
+        d->beginStreamingAssistant();
 
     // UI-only draft bubble; the persisted content is updated via setAiMessageContent()/appendAiToken().
     d->currentAiBubbleIsDraft = true;
@@ -800,9 +1475,18 @@ void ChatWindow::appendAiMessageStart()
         auto* w = new ChatMessageWidget(d->aiAvatar, QString(), /*isUser*/false, nullptr);
         w->setWaitingForResponse(true);
         w->setMaxBubbleWidth(d->computeBubbleMaxWidth());
-        w->setRowWidth(d->viewportRowWidth());
+        w->setRowWidth(0);
+        int sourceIndex = d->streamingAssistantIndex;
+        if (sourceIndex < 0)
+            sourceIndex = d->findAssistantSourceIndexFromDisk(QString());
+        w->setSourceMessageIndex(sourceIndex);
+        w->setSelectionModeEnabled(d->messageSelectMode);
+        w->setMessageChecked(d->selectedMessageIndices.contains(sourceIndex));
+        QObject::connect(w, &ChatMessageWidget::messageSelectionToggled, d->list, [this](int index, bool checked) {
+            d->setMessageSelection(index, checked);
+        });
         const QSize hint = w->sizeHint();
-        item->setSizeHint(QSize(d->viewportRowWidth(), hint.height()));
+        item->setSizeHint(QSize(0, hint.height()));
         d->list->addItem(item);
         d->list->setItemWidget(item, w);
         d->currentAiBubble = w;
@@ -815,13 +1499,17 @@ void ChatWindow::appendAiToken(const QString& token)
 {
     if (!d) return;
     if (!d->currentAiBubble)
+        appendAiMessageStart();
+    if (!d->currentAiBubble)
         return;
 
     d->currentAiBubble->appendToken(token);
 
     // Streaming: update the single persisted assistant placeholder, don't append new rows.
-    if (!d->modelFolder.isEmpty())
+    if (d->persistenceEnabled && !d->modelFolder.isEmpty())
         d->updateStreamingAssistantContent(d->currentAiBubble->content());
+    else
+        d->bindCurrentAiBubbleSourceIndexIfNeeded();
 
     // resize list item
     if (d->list)
@@ -830,9 +1518,8 @@ void ChatWindow::appendAiToken(const QString& token)
         if (item)
         {
             const QSize hint = d->currentAiBubble->sizeHint();
-            item->setSizeHint(QSize(d->viewportRowWidth(), hint.height()));
+            item->setSizeHint(QSize(0, hint.height()));
         }
-        d->scheduleRelayout(this);
         d->list->scrollToBottom();
     }
 }
@@ -891,7 +1578,10 @@ void ChatWindow::setAiMessageContent(const QString& content)
         d->currentAiBubbleIsDraft = true;
 
         // Keep persisted placeholder in sync.
-        d->updateStreamingAssistantContent(content);
+        if (d->persistenceEnabled)
+            d->updateStreamingAssistantContent(content);
+        else
+            d->bindCurrentAiBubbleSourceIndexIfNeeded();
 
         if (d->list)
         {
@@ -899,10 +1589,8 @@ void ChatWindow::setAiMessageContent(const QString& content)
             if (item)
             {
                 const QSize hint = d->currentAiBubble->sizeHint();
-                item->setSizeHint(QSize(d->viewportRowWidth(), hint.height()));
+                item->setSizeHint(QSize(0, hint.height()));
             }
-
-            d->scheduleRelayout(this);
             d->list->scrollToBottom();
         }
     }
@@ -911,10 +1599,12 @@ void ChatWindow::setAiMessageContent(const QString& content)
 void ChatWindow::loadFromDisk(const QString& modelFolder)
 {
     if (modelFolder.isEmpty()) return;
-    d->messages = loadChatMessages(modelFolder);
+    d->messages = ConversationRepository::loadMessages(modelFolder);
     d->currentAiBubble = nullptr;
     d->currentAiBubbleIsDraft = false;
     d->streamingAssistantIndex = -1;
+    d->messageSelectMode = false;
+    d->selectedMessageIndices.clear();
     d->rebuildFromMessages();
 }
 
@@ -926,8 +1616,13 @@ bool ChatWindow::event(QEvent* e)
         if (d)
         {
             if (d->input) d->input->setPlaceholderText(tr("输入消息... (Enter 发送 / Shift+Enter 换行)"));
-            if (d->sendBtn) d->sendBtn->setToolTip(tr("发送"));
+            d->updateSendButtonState();
+            if (d->mcpBtn) d->mcpBtn->setToolTip(tr("MCP"));
             if (d->clearBtn) d->clearBtn->setToolTip(tr("清除"));
+            if (d->deleteSelectedBtn) d->deleteSelectedBtn->setToolTip(tr("删除"));
+            if (d->deleteSelectedTextLabel) d->deleteSelectedTextLabel->setText(tr("删除"));
+            d->updateMcpPopup();
+            d->updateSelectionUi();
         }
     }
 
@@ -935,11 +1630,13 @@ bool ChatWindow::event(QEvent* e)
     {
         if (d && d->list)
         {
-            d->applyBubbleWidthForAll();
+            d->scheduleRelayout(this);
         }
         if (d)
         {
             d->updateInputMetrics();
+            if (d->mcpPopup && d->mcpPopup->isVisible() && d->mcpBtn)
+                d->mcpPopup->popupNearAnchor(d->mcpBtn);
         }
     }
 
@@ -950,8 +1647,11 @@ bool ChatWindow::event(QEvent* e)
     {
         if (d)
         {
-            if (d->sendBtn) d->sendBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatSend));
+            d->updateSendButtonState();
+            if (d->mcpBtn) d->mcpBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatMcp));
             if (d->clearBtn) d->clearBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatClear));
+            if (d->deleteSelectedBtn) d->deleteSelectedBtn->setIcon(Theme::themedIcon(Theme::IconToken::ChatDelete));
+            d->updateMcpPopup();
             if (d->list) d->list->viewport()->update();
             d->updateInputMetrics();
             d->scheduleRelayout(this);
@@ -967,8 +1667,8 @@ bool ChatWindow::eventFilter(QObject* obj, QEvent* e)
     {
         if (e->type() == QEvent::Resize)
         {
-            // Immediate relayout on viewport resize fixes the "right side empty" width glitch.
-            d->applyBubbleWidthForAll();
+            // Debounced relayout avoids jitter during fast narrow/wide drag resize.
+            d->scheduleRelayout(this);
             return false;
         }
     }
@@ -988,6 +1688,16 @@ void ChatWindow::finalizeAssistantMessage(const QString& content, bool ensureBub
     if (!d || d->modelFolder.isEmpty())
         return;
 
+    if (!d->persistenceEnabled)
+    {
+        d->currentAiBubble = nullptr;
+        d->currentAiBubbleIsDraft = false;
+        d->messages = ConversationRepository::loadMessages(d->modelFolder);
+        d->rebuildFromMessages();
+        d->scheduleRelayout(this);
+        return;
+    }
+
     // Make sure we have a visible assistant bubble representing THIS reply.
     if (ensureBubbleExists)
     {
@@ -995,6 +1705,7 @@ void ChatWindow::finalizeAssistantMessage(const QString& content, bool ensureBub
             appendAiMessageStart();
         if (d->currentAiBubble)
             d->currentAiBubble->setContent(content);
+        d->bindCurrentAiBubbleSourceIndexIfNeeded();
     }
 
     // Persist final assistant content exactly once:
@@ -1022,7 +1733,7 @@ void ChatWindow::finalizeAssistantMessage(const QString& content, bool ensureBub
                 QJsonObject o = last;
                 o["content"] = content;
                 d->messages[d->messages.size() - 1] = o;
-                saveChatMessages(d->modelFolder, d->messages);
+                ConversationRepository::saveMessages(d->modelFolder, d->messages);
             }
             else if (!(role == QStringLiteral("assistant") && lastContent == content))
             {

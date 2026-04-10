@@ -3,6 +3,7 @@
 #include <QVector>
 #include <QJsonObject>
 #include <QRect>
+#include <QMap>
 
 struct ModelEntry {
     QString folderName;   // e.g. "Hiyori"
@@ -81,6 +82,10 @@ public:
     bool aiStreamEnabled() const;
     void setAiStreamEnabled(bool enabled);
 
+    // TTS settings (stored in global config.json)
+    // Note: Runtime is now always enabled; useAgentRuntime() always returns true
+    bool useAgentRuntime() const { return true; }  // Always enabled, kept for compatibility
+
     // ---- TTS settings (stored in global config.json) ----
     QString ttsBaseUrl() const; // user input like https://xxx/v1 (we'll append /audio/speech)
     void setTtsBaseUrl(const QString& url);
@@ -90,6 +95,16 @@ public:
     void setTtsModel(const QString& model);
     QString ttsVoice() const;
     void setTtsVoice(const QString& voice);
+
+    // ---- MCP settings (stored in mcp.json, not config.json) ----
+    QList<class McpServerConfig> mcpServers() const;
+    void setMcpServers(const QList<class McpServerConfig>& servers);
+    void addMcpServer(const class McpServerConfig& server);
+    void removeMcpServer(const QString& serverName);
+    void updateMcpServer(const class McpServerConfig& server);
+    bool hasMcpServer(const QString& serverName) const;
+    class McpServerConfig mcpServer(const QString& serverName) const;
+    QString mcpJsonPath() const;
 
     // Cache dir for temp files (e.g. TTS audio)
     QString cacheDir() const;
@@ -136,6 +151,13 @@ private:
     QString m_ttsApiKey;
     QString m_ttsModel{"gpt-4o-mini-tts"};
     QString m_ttsVoice{"alloy"};
+
+    // MCP (loaded from mcp.json)
+    QList<class McpServerConfig> m_mcpServers;
+    QMap<QString, bool> m_mcpEnabledStates;
+
+    void loadMcpServersFromFile();
+    void saveMcpServersToFile() const;
 
     QJsonObject loadModelConfigObject(const QString& folder) const;
     void saveModelConfigObject(const QString& folder, const QJsonObject& obj) const;
