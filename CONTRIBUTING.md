@@ -147,6 +147,7 @@ cmake -S . -B build -G Ninja \
 - 尽量保持改动聚焦、最小化
 - 不要在同一 PR 中混入无关重构
 - 保持现有代码风格（命名、缩进、文件组织）
+- 对 Agent / Chat / TTS / MCP 相关改动，请先阅读 [AGENT.md](AGENT.md)；如需英文说明，请同步参考 [AGENT.en.md](AGENT.en.md)
 - 跨平台宏统一规范：
    - Windows：仅允许 `#if defined(Q_OS_WIN32)` / `#elif defined(Q_OS_WIN32)`
    - Linux：仅允许 `#if defined(Q_OS_LINUX)` / `#elif defined(Q_OS_LINUX)`
@@ -154,6 +155,16 @@ cmake -S . -B build -G Ninja \
    - 统一禁止：`#ifdef` / `#ifndef` 直接判断平台宏
 - 对 UI 文案改动，请同步 i18n（`res/i18n/*.ts`）
 - 涉及许可证与分发内容，请同步更新 `NOTICE` / `THIRD_PARTY_LICENSES.md` / `THIRD_PARTY_LICENSES.en.md`
+
+#### Agent 开发规范
+
+- Agent 相关功能开发、重构或排障前，请先阅读 [AGENT.md](AGENT.md) 中的架构说明、关键路径索引与验证清单
+- AgentRuntime 是对话状态与聊天持久化的单一事实来源；启用 Runtime 时，不要让 `ChatWindow` 直接写聊天记录
+- Agent 主流程编排集中在 `ChatController`；不要把跨模块流程分散到窗口类中
+- 新增 Provider、MCP Adapter、Tool 路由或设置项时，优先沿用现有接口层：`IChatProvider`、`ITtsProvider`、`IMcpAdapter`、`SettingsManager`
+- 修改 MCP 相关能力时，必须同时考虑 tool 缓存、ToolRegistry 路由、server 状态发布，以及 SettingsWindow / ChatWindow 的联动
+- 修改消息协议、tool call 或持久化过滤逻辑时，必须验证纯聊天、tool call 往返、TTS 路径、切换模型与清空聊天这些基本场景
+- 若 Agent 改动影响贡献者使用方式或架构认知，请同步更新 [AGENT.md](AGENT.md) 与 [AGENT.en.md](AGENT.en.md)
 
 #### i18n 更新流程
 

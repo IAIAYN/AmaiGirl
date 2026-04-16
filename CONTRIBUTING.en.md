@@ -147,6 +147,7 @@ cmake -S . -B build -G Ninja \
 - Keep changes focused and minimal
 - Avoid mixing unrelated refactors in one PR
 - Follow existing project style (naming, formatting, file layout)
+- For Agent / Chat / TTS / MCP related changes, read [AGENT.en.md](AGENT.en.md) first; if you need the Chinese reference, see [AGENT.md](AGENT.md)
 - Cross-platform macro rules:
    - Windows: only `#if defined(Q_OS_WIN32)` / `#elif defined(Q_OS_WIN32)`
    - Linux: only `#if defined(Q_OS_LINUX)` / `#elif defined(Q_OS_LINUX)`
@@ -154,6 +155,16 @@ cmake -S . -B build -G Ninja \
    - Globally disallow direct platform checks via `#ifdef` / `#ifndef`
 - Sync i18n (`res/i18n/*.ts`) when UI texts are changed
 - Update `NOTICE` / `THIRD_PARTY_LICENSES.md` / `THIRD_PARTY_LICENSES.en.md` when distribution/license-related content changes
+
+#### Agent Development Rules
+
+- Before developing, refactoring, or debugging Agent-related features, read [AGENT.en.md](AGENT.en.md) for architecture, path index, and validation guidance
+- `AgentRuntime` is the single source of truth for conversation state and chat persistence; when Runtime is active, do not let `ChatWindow` write chat history directly
+- Main Agent orchestration belongs in `ChatController`; do not scatter cross-module flow into window classes
+- When adding Providers, MCP Adapters, tool routing, or settings, prefer the existing interfaces: `IChatProvider`, `ITtsProvider`, `IMcpAdapter`, and `SettingsManager`
+- When changing MCP-related behavior, consider tool caching, `ToolRegistry` routing, server status publishing, and SettingsWindow / ChatWindow integration together
+- When changing message protocol, tool-call handling, or persistence filtering, validate plain chat, tool-call round trips, TTS, model switching, and clear-chat flows
+- If an Agent change affects contributor workflow or architecture understanding, update both [AGENT.en.md](AGENT.en.md) and [AGENT.md](AGENT.md) in the same PR
 
 #### i18n Workflow
 
